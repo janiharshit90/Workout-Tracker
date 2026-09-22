@@ -4,7 +4,7 @@
 #   git tag v1.1.0 && git push origin v1.1.0
 #
 # Required repo secrets (Settings -> Secrets and variables -> Actions):
-#   KEYSTORE_BASE64, STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD   (see README)
+#   KEYSTORE_BASE64, STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
 name: Release
 
 on:
@@ -18,18 +18,27 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      # Secrets can't be referenced directly in `if:` conditions, so expose them as env.
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
       KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
       - uses: gradle/actions/setup-gradle@v3
 
       - name: Set up signing
@@ -47,11 +56,16 @@ jobs:
           } > keystore.properties
 
       - name: Build signed release APK
+        working-directory: MentzerTracker
         run: |
           chmod +x ./gradlew
           VERSION="${GITHUB_REF_NAME#v}"
           ./gradlew assembleRelease --no-daemon -PappVersionName="$VERSION"
-          cp app/build/outputs/apk/release/app-release.apk "MentzerTracker-$VERSION.apk"
+
+      - name: Copy APK to workspace root with versioned name
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp MentzerTracker/app/build/outputs/apk/release/app-release.apk "MentzerTracker-$VERSION.apk"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
