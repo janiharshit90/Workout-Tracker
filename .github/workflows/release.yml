@@ -47,13 +47,13 @@ jobs:
             echo "::error::KEYSTORE_BASE64 secret is missing. Updates REQUIRE a fixed signing key - see README."
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > MentzerTracker/release.keystore
           {
             echo "storeFile=release.keystore"
             echo "storePassword=$STORE_PASSWORD"
             echo "keyAlias=$KEY_ALIAS"
             echo "keyPassword=$KEY_PASSWORD"
-          } > keystore.properties
+          } > MentzerTracker/keystore.properties
 
       - name: Build signed release APK
         working-directory: MentzerTracker
