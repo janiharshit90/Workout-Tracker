@@ -1,0 +1,23 @@
+# Secrets — NEVER commit these
+*.jks
+*.keystore
+keystore.properties
+
+# Local machine config
+local.properties
+.gradle/
+build/
+*.iml
+.idea/
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Backups / logs you don't want in the repo
+*.zip
+*.log
+applog.txt
+
+# Gradle / Kotlin
+.kotlin/
