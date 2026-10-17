@@ -112,11 +112,13 @@ fun AppRoot(vm: WorkoutViewModel, updateVm: UpdateViewModel) {
                     vm = vm,
                     updateVm = updateVm,
                     onManageExercises = { nav.navigate("manage_exercises") },
-                    onManageTemplates = { nav.navigate("manage_templates") }
+                    onManageTemplates = { nav.navigate("manage_templates") },
+                    onOpenPrinciples = { nav.navigate("principles") }
                 )
             }
             composable("manage_exercises") { ManageExercisesScreen(vm, onBack = { nav.popBackStack() }) }
             composable("manage_templates") { ManageTemplatesScreen(vm, onBack = { nav.popBackStack() }) }
+            composable("principles") { PrinciplesScreen(onBack = { nav.popBackStack() }) }
             composable(
                 "progress/{exerciseId}",
                 arguments = listOf(navArgument("exerciseId") { type = NavType.LongType })

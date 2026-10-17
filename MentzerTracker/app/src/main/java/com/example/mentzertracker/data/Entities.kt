@@ -47,7 +47,10 @@ data class WorkoutSet(
     val setNumber: Int,
     val weight: Float,
     val reps: Int,
-    val notes: String = ""
+    val notes: String = "",
+    // Added in v4 (see MIGRATION_3_4). Defaults keep existing rows valid.
+    val toFailure: Boolean = false,
+    val forcedReps: Int = 0
 )
 
 @Entity(tableName = "personal_records",
@@ -64,7 +67,8 @@ data class PersonalRecord(
 data class SetWithExercise(
     val id: Long, val exerciseId: Long, val exerciseName: String,
     val sessionDate: Long, val setNumber: Int, val weight: Float,
-    val reps: Int, val notes: String
+    val reps: Int, val notes: String,
+    val toFailure: Boolean = false, val forcedReps: Int = 0
 )
 
 data class PRWithExercise(

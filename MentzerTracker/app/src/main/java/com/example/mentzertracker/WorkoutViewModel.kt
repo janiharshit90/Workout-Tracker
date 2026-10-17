@@ -21,7 +21,14 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 
-data class SetInput(val weight: String = "", val reps: String = "") {
+data class SetInput(
+    val weight: String = "",
+    val reps: String = "",
+    /** Heavy Duty logging: did this set go to true momentary muscular failure? */
+    val toFailure: Boolean = false,
+    /** Forced reps taken past failure with a spotter's help. Only meaningful when toFailure. */
+    val forcedReps: Int = 0
+) {
     val isEmpty: Boolean get() = weight.isBlank() && reps.isBlank()
     val isComplete: Boolean get() =
         parseWeight(weight)?.let { it >= 0f } == true && (reps.toIntOrNull() ?: 0) > 0
@@ -104,6 +111,18 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _keepScreenOn = MutableStateFlow(prefs.getBoolean(PREF_KEEP_ON, true))
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn
+
+    /** Whether Today shows the per-set "to failure" toggle and forced-reps stepper. */
+    private val _trackFailure = MutableStateFlow(prefs.getBoolean(PREF_TRACK_FAILURE, true))
+    val trackFailure: StateFlow<Boolean> = _trackFailure
+
+    /**
+     * Days of full recovery Mentzer's HIT philosophy calls for before training the same
+     * exercise again. Purely informational (a badge on Today) - never blocks logging,
+     * since only you know how you actually feel.
+     */
+    private val _recoveryDays = MutableStateFlow(prefs.getInt(PREF_RECOVERY_DAYS, DEFAULT_RECOVERY_DAYS))
+    val recoveryDays: StateFlow<Int> = _recoveryDays
 
     // ------------------------------------------------------------------
     // Rest timer (lives here, not in the composable, so it survives tab switches
@@ -220,6 +239,25 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         setInputs(_inputs.value + (exerciseId to list.dropLast(1)))
     }
 
+    /** Marks/unmarks a set as taken to true muscular failure. Clears forced reps when unmarked. */
+    fun toggleFailure(exerciseId: Long, setIndex: Int) {
+        val list = currentSets(exerciseId).toMutableList()
+        if (setIndex !in list.indices) return
+        val cur = list[setIndex]
+        list[setIndex] = cur.copy(toFailure = !cur.toFailure, forcedReps = if (cur.toFailure) 0 else cur.forcedReps)
+        setInputs(_inputs.value + (exerciseId to list.toList()))
+    }
+
+    /** +/- stepper for forced reps; only meaningful once a set is marked to failure. */
+    fun adjustForcedReps(exerciseId: Long, setIndex: Int, delta: Int) {
+        val list = currentSets(exerciseId).toMutableList()
+        if (setIndex !in list.indices) return
+        val cur = list[setIndex]
+        if (!cur.toFailure) return
+        list[setIndex] = cur.copy(forcedReps = (cur.forcedReps + delta).coerceIn(0, MAX_FORCED_REPS))
+        setInputs(_inputs.value + (exerciseId to list.toList()))
+    }
+
     /** Pre-fills an exercise with exactly what you did last time (in the current unit). */
     fun fillFromLast(exerciseId: Long) {
         val last = lastSessions.value[exerciseId] ?: return
@@ -267,7 +305,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                                 toInsert += WorkoutSet(
                                     exerciseId = exId, sessionDate = sessionDate, setNumber = setNumber,
                                     weight = displayToLbs(parseWeight(s.weight)!!, unit),
-                                    reps = s.reps.toInt()
+                                    reps = s.reps.toInt(),
+                                    toFailure = s.toFailure, forcedReps = if (s.toFailure) s.forcedReps else 0
                                 )
                             }
                         }
@@ -469,6 +508,16 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean(PREF_KEEP_ON, on).apply()
     }
 
+    fun setTrackFailure(on: Boolean) {
+        _trackFailure.value = on
+        prefs.edit().putBoolean(PREF_TRACK_FAILURE, on).apply()
+    }
+
+    fun setRecoveryDays(days: Int) {
+        _recoveryDays.value = days
+        prefs.edit().putInt(PREF_RECOVERY_DAYS, days).apply()
+    }
+
     // ==================================================================
     // Rest timer
     // ==================================================================
@@ -567,7 +616,9 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     private fun saveDraft(map: Map<Long, List<SetInput>>) {
         val o = JSONObject()
         map.forEach { (id, sets) ->
-            o.put(id.toString(), JSONArray().apply { sets.forEach { put(JSONArray().put(it.weight).put(it.reps)) } })
+            o.put(id.toString(), JSONArray().apply {
+                sets.forEach { put(JSONArray().put(it.weight).put(it.reps).put(it.toFailure).put(it.forcedReps)) }
+            })
         }
         prefs.edit().putString(PREF_DRAFT, o.toString()).apply()
     }
@@ -581,7 +632,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                     val arr = o.getJSONArray(k)
                     put(k.toLong(), List(arr.length()) { i ->
                         val p = arr.getJSONArray(i)
-                        SetInput(p.optString(0, ""), p.optString(1, ""))
+                        // optBoolean/optInt default gracefully for drafts saved before v4.
+                        SetInput(p.optString(0, ""), p.optString(1, ""), p.optBoolean(2, false), p.optInt(3, 0))
                     })
                 }
             }
@@ -591,6 +643,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         const val DEFAULT_SETS = 3
         const val MAX_SETS = 10
+        const val MAX_FORCED_REPS = 20
+        const val DEFAULT_RECOVERY_DAYS = 5
 
         private const val PREF_UNIT = "weight_unit"
         private const val PREF_DRAFT = "draft_inputs"
@@ -598,6 +652,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_TEMPLATE = "selected_template"
         private const val PREF_KEEP_ON = "keep_screen_on"
         private const val PREF_TIMER_MIN = "timer_minutes"
+        private const val PREF_TRACK_FAILURE = "track_failure"
+        private const val PREF_RECOVERY_DAYS = "recovery_days"
 
         fun computePrs(sets: List<SetWithExercise>): Map<Long, PrInfo> =
             sets.groupBy { it.exerciseId }.mapNotNull { (exId, list) ->
