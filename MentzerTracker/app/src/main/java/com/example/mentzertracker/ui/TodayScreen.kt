@@ -13,8 +13,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Timer
@@ -47,6 +50,8 @@ fun TodayScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
     val lastSessions by vm.lastSessions.collectAsState()
     val prs by vm.prs.collectAsState()
     val history by vm.history.collectAsState()
+    val trackFailure by vm.trackFailure.collectAsState()
+    val recoveryDays by vm.recoveryDays.collectAsState()
 
     var showAddExercise by remember { mutableStateOf(false) }
     var showAddTemplate by remember { mutableStateOf(false) }
@@ -172,8 +177,12 @@ fun TodayScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
                 unit = unit,
                 last = lastSessions[ex.id],
                 pr = prs[ex.id],
+                trackFailure = trackFailure,
+                recoveryDays = recoveryDays,
                 onWeight = { idx, v -> vm.updateSet(ex.id, idx, weight = v) },
                 onReps = { idx, v -> vm.updateSet(ex.id, idx, reps = v) },
+                onToggleFailure = { idx -> vm.toggleFailure(ex.id, idx) },
+                onForcedReps = { idx, delta -> vm.adjustForcedReps(ex.id, idx, delta) },
                 onAddSet = { vm.addSet(ex.id) },
                 onRemoveSet = { vm.removeSet(ex.id) },
                 onFillLast = { vm.fillFromLast(ex.id) },
@@ -267,8 +276,12 @@ private fun ExerciseCard(
     unit: WeightUnit,
     last: List<SetWithExercise>?,
     pr: PrInfo?,
+    trackFailure: Boolean,
+    recoveryDays: Int,
     onWeight: (Int, String) -> Unit,
     onReps: (Int, String) -> Unit,
+    onToggleFailure: (Int) -> Unit,
+    onForcedReps: (Int, Int) -> Unit,
     onAddSet: () -> Unit,
     onRemoveSet: () -> Unit,
     onFillLast: () -> Unit,
@@ -288,6 +301,33 @@ private fun ExerciseCard(
                 Text(exercise.cue, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(end = 8.dp))
+            }
+
+            // Recovery: Mentzer's HIT philosophy grows muscle between sessions, not during
+            // them. This is informational only - it never blocks logging.
+            val daysSinceTrained = last?.firstOrNull()?.sessionDate?.let { daysAgo(it) }
+            if (daysSinceTrained != null) {
+                val ready = daysSinceTrained >= recoveryDays
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp, end = 8.dp)
+                ) {
+                    Icon(
+                        if (ready) Icons.Filled.CheckCircle else Icons.Filled.HourglassEmpty,
+                        null, Modifier.size(13.dp),
+                        tint = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (ready) "Recovered \u00b7 ready to train"
+                        else {
+                            val left = recoveryDays - daysSinceTrained
+                            "Recovering \u00b7 $left day${if (left == 1) "" else "s"} left"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // What to beat: the core of progressive overload.
@@ -326,39 +366,67 @@ private fun ExerciseCard(
             Spacer(Modifier.height(8.dp))
 
             Row(Modifier.fillMaxWidth().padding(end = 8.dp)) {
-                Text("Set", Modifier.width(32.dp), style = MaterialTheme.typography.labelSmall,
+                Text("Set", Modifier.width(28.dp), style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Weight (${unit.label})", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                Text("Weight (${unit.label})", Modifier.weight(1.1f), style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(8.dp))
-                Text("Reps", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                Spacer(Modifier.width(6.dp))
+                Text("Reps", Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (trackFailure) Spacer(Modifier.width(36.dp))
             }
 
             sets.forEachIndexed { idx, s ->
                 val lastSet = last?.getOrNull(idx)
                 Row(Modifier.fillMaxWidth().padding(end = 8.dp, top = 4.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("${idx + 1}", Modifier.width(32.dp), fontWeight = FontWeight.SemiBold)
+                    Text("${idx + 1}", Modifier.width(28.dp), fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = s.weight,
                         onValueChange = { onWeight(idx, it) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1.1f),
                         singleLine = true,
                         placeholder = {
                             Text(lastSet?.let { formatWeight(lbsToDisplay(it.weight, unit)) } ?: unit.label)
                         },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                     OutlinedTextField(
                         value = s.reps,
                         onValueChange = { onReps(idx, it) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(0.9f),
                         singleLine = true,
                         placeholder = { Text(lastSet?.reps?.toString() ?: "reps") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
                     )
+                    if (trackFailure) {
+                        IconButton(onClick = { onToggleFailure(idx) }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Filled.LocalFireDepartment,
+                                contentDescription = if (s.toFailure) "Marked to failure" else "Mark set as to failure",
+                                tint = if (s.toFailure) MaterialTheme.colorScheme.error
+                                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+                if (trackFailure && s.toFailure) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 28.dp, end = 8.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Forced reps (with a spot)", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { onForcedReps(idx, -1) }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Filled.Remove, null, Modifier.size(16.dp))
+                        }
+                        Text("${s.forcedReps}", style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(horizontal = 6.dp))
+                        IconButton(onClick = { onForcedReps(idx, 1) }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Filled.Add, null, Modifier.size(16.dp))
+                        }
+                    }
                 }
             }
 

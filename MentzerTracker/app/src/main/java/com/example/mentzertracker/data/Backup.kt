@@ -50,7 +50,8 @@ object BackupManager {
                     put(JSONObject().put("id", it.id).put("exerciseId", it.exerciseId)
                         .put("sessionDate", it.sessionDate).put("setNumber", it.setNumber)
                         .put("weight", it.weight.toDouble()).put("reps", it.reps)
-                        .put("notes", it.notes))
+                        .put("notes", it.notes)
+                        .put("toFailure", it.toFailure).put("forcedReps", it.forcedReps))
                 }
             })
             .toString(2)
@@ -87,7 +88,8 @@ object BackupManager {
                 WorkoutSet(id = o.getLong("id"), exerciseId = o.getLong("exerciseId"),
                     sessionDate = o.getLong("sessionDate"), setNumber = o.getInt("setNumber"),
                     weight = o.getDouble("weight").toFloat(), reps = o.getInt("reps"),
-                    notes = o.optString("notes", ""))
+                    notes = o.optString("notes", ""),
+                    toFailure = o.optBoolean("toFailure", false), forcedReps = o.optInt("forcedReps", 0))
             }.filter { it.exerciseId in exIds }
 
             db.withTransaction {

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.ListAlt
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -34,10 +35,13 @@ fun SettingsScreen(
     vm: WorkoutViewModel,
     updateVm: UpdateViewModel,
     onManageExercises: () -> Unit,
-    onManageTemplates: () -> Unit
+    onManageTemplates: () -> Unit,
+    onOpenPrinciples: () -> Unit
 ) {
     val unit by vm.weightUnit.collectAsState()
     val keepOn by vm.keepScreenOn.collectAsState()
+    val trackFailure by vm.trackFailure.collectAsState()
+    val recoveryDays by vm.recoveryDays.collectAsState()
     val autoCheck by updateVm.autoCheck.collectAsState()
     val lastChecked by updateVm.lastChecked.collectAsState()
     val updateState by updateVm.state.collectAsState()
@@ -91,6 +95,36 @@ fun SettingsScreen(
         item {
             SettingsSection("Workout") {
                 SwitchRow("Keep screen on", "While on Today or while the rest timer runs", keepOn, vm::setKeepScreenOn)
+            }
+        }
+
+        item {
+            SettingsSection("Heavy Duty") {
+                SwitchRow(
+                    "Track training to failure",
+                    "Adds a per-set toggle for true failure, plus a forced-reps counter",
+                    trackFailure, vm::setTrackFailure
+                )
+                Spacer(Modifier.height(10.dp))
+                Text("Recovery target", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Days of rest Today's \"recovering / ready\" badge expects before hitting " +
+                    "the same exercise again",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(3, 5, 7, 10).forEach { d ->
+                        FilterChip(
+                            selected = recoveryDays == d,
+                            onClick = { vm.setRecoveryDays(d) },
+                            label = { Text("${d}d") }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                SettingsRow(Icons.Filled.MenuBook, "Heavy Duty principles", "What this app is built around", onOpenPrinciples)
             }
         }
 

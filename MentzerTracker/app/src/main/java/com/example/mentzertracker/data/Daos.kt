@@ -37,7 +37,7 @@ interface ExerciseDao {
 interface WorkoutDao {
     @Query("""
         SELECT s.id, s.exerciseId, e.name AS exerciseName, s.sessionDate,
-               s.setNumber, s.weight, s.reps, s.notes
+               s.setNumber, s.weight, s.reps, s.notes, s.toFailure, s.forcedReps
         FROM workout_sets s JOIN exercises e ON s.exerciseId = e.id
         ORDER BY s.sessionDate DESC, e.sortOrder ASC, s.setNumber ASC
     """)
@@ -45,7 +45,7 @@ interface WorkoutDao {
 
     @Query("""
         SELECT s.id, s.exerciseId, e.name AS exerciseName, s.sessionDate,
-               s.setNumber, s.weight, s.reps, s.notes
+               s.setNumber, s.weight, s.reps, s.notes, s.toFailure, s.forcedReps
         FROM workout_sets s JOIN exercises e ON s.exerciseId = e.id
         ORDER BY s.sessionDate ASC, e.sortOrder ASC, s.setNumber ASC
     """)

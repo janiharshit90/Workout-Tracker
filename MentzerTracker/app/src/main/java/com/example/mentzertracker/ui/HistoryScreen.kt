@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -107,13 +108,23 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable { editing = s }
-                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Set ${s.setNumber}", Modifier.width(56.dp),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("${formatWeight(lbsToDisplay(s.weight, unit))} ${unit.label} \u00d7 ${s.reps}",
-                                    style = MaterialTheme.typography.bodyMedium)
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f))
+                                if (s.toFailure) {
+                                    Icon(Icons.Filled.LocalFireDepartment, "To failure",
+                                        Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                    if (s.forcedReps > 0) {
+                                        Text(" +${s.forcedReps}", style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
                             }
                         }
                     }
