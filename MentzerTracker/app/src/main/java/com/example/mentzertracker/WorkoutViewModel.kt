@@ -124,6 +124,26 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     private val _recoveryDays = MutableStateFlow(prefs.getInt(PREF_RECOVERY_DAYS, DEFAULT_RECOVERY_DAYS))
     val recoveryDays: StateFlow<Int> = _recoveryDays
 
+    /** Rep range that drives progression suggestions (double progression). */
+    private val _repRange = MutableStateFlow(loadRepRange())
+    val repRange: StateFlow<IntRange> = _repRange
+
+    /** exerciseId -> what to aim for next time, derived from the last session of each exercise. */
+    val suggestions: StateFlow<Map<Long, Suggestion>> =
+        combine(lastSessions, _weightUnit, _repRange) { last, unit, range ->
+            last.mapNotNull { (id, sets) -> suggestNext(sets, unit, range)?.let { id to it } }.toMap()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /**
+     * Wall-clock time the current workout started, or null when nothing is in progress.
+     * Starts on the first weight/reps/failure entry, persists across app kills (with the draft),
+     * and is cleared when the workout is logged or the entries are cleared.
+     */
+    private val _sessionStartedAt = MutableStateFlow(
+        prefs.getLong(PREF_SESSION_START, 0L).takeIf { it > 0L }
+    )
+    val sessionStartedAt: StateFlow<Long?> = _sessionStartedAt
+
     // ------------------------------------------------------------------
     // Rest timer (lives here, not in the composable, so it survives tab switches
     // and scrolling; alerts even if you're on another tab)
@@ -214,6 +234,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val newWeight = weight?.let(::sanitizeWeightInput)
         val newReps = reps?.let(::sanitizeRepsInput)
         list[setIndex] = old.copy(weight = newWeight ?: old.weight, reps = newReps ?: old.reps)
+        if (!newWeight.isNullOrEmpty() || !newReps.isNullOrEmpty()) touchSession()
 
         // Typing set 1's weight carries it to later sets that are blank OR still hold the
         // previously auto-filled value. (Old bug: typing "135" left the others stuck at "1".)
@@ -245,6 +266,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         if (setIndex !in list.indices) return
         val cur = list[setIndex]
         list[setIndex] = cur.copy(toFailure = !cur.toFailure, forcedReps = if (cur.toFailure) 0 else cur.forcedReps)
+        touchSession()
         setInputs(_inputs.value + (exerciseId to list.toList()))
     }
 
@@ -255,6 +277,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val cur = list[setIndex]
         if (!cur.toFailure) return
         list[setIndex] = cur.copy(forcedReps = (cur.forcedReps + delta).coerceIn(0, MAX_FORCED_REPS))
+        touchSession()
         setInputs(_inputs.value + (exerciseId to list.toList()))
     }
 
@@ -267,12 +290,43 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         if (sets.isNotEmpty()) setInputs(_inputs.value + (exerciseId to sets))
     }
 
+    /**
+     * Puts the suggested weight into every set row of this exercise. Reps are left blank on
+     * purpose - they're what you go and earn. Does not start the session clock.
+     */
+    fun applySuggestion(exerciseId: Long) {
+        val sug = suggestions.value[exerciseId] ?: return
+        val shown = formatWeight(lbsToDisplay(sug.weightLbs, _weightUnit.value))
+        setInputs(_inputs.value + (exerciseId to currentSets(exerciseId).map { it.copy(weight = shown) }))
+    }
+
     fun clearInputs() {
         val old = _inputs.value
         if (old.values.all { sets -> sets.all { it.isEmpty } }) return
+        val oldStart = _sessionStartedAt.value
         setInputs(emptyMap())
-        postEvent("Cleared all entries", "Undo") { setInputs(old) }
+        setSessionStart(null)
+        postEvent("Cleared all entries", "Undo") { setInputs(old); setSessionStart(oldStart) }
     }
+
+    // ==================================================================
+    // Session clock
+    // ==================================================================
+
+    /** Starts the clock on first activity; restarts it if the previous start is clearly stale. */
+    private fun touchSession() {
+        val now = System.currentTimeMillis()
+        val start = _sessionStartedAt.value
+        if (start == null || now - start > SESSION_STALE_MS) setSessionStart(now)
+    }
+
+    private fun setSessionStart(t: Long?) {
+        _sessionStartedAt.value = t
+        prefs.edit().apply { if (t == null) remove(PREF_SESSION_START) else putLong(PREF_SESSION_START, t) }.apply()
+    }
+
+    /** Restarts the clock from now (e.g. it started by accident while you were setting up). */
+    fun resetSession() = setSessionStart(System.currentTimeMillis())
 
     // ==================================================================
     // Logging
@@ -288,6 +342,9 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 val heavy = _heavyDutyMode.value
                 val unit = _weightUnit.value
                 val sessionDate = System.currentTimeMillis()
+                // Whole-session length; 0 (unknown) if there was no clock or it looks abandoned.
+                val elapsedSec = _sessionStartedAt.value?.let { (sessionDate - it) / 1000L } ?: 0L
+                val durationSec = if (elapsedSec in 1..(SESSION_STALE_MS / 1000L)) elapsedSec.toInt() else 0
                 // Guards against a draft that references an exercise deleted since (FK crash).
                 val exercisesById = exerciseDao.getAllOnce().associateBy { it.id }
 
@@ -306,7 +363,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                                     exerciseId = exId, sessionDate = sessionDate, setNumber = setNumber,
                                     weight = displayToLbs(parseWeight(s.weight)!!, unit),
                                     reps = s.reps.toInt(),
-                                    toFailure = s.toFailure, forcedReps = if (s.toFailure) s.forcedReps else 0
+                                    toFailure = s.toFailure, forcedReps = if (s.toFailure) s.forcedReps else 0,
+                                    durationSec = durationSec
                                 )
                             }
                         }
@@ -331,8 +389,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 setInputs(emptyMap())
+                setSessionStart(null)
                 postEvent(buildString {
                     append(if (heavy) "Heavy Duty session logged" else "Workout logged (${toInsert.size} sets)")
+                    if (durationSec > 0) append(" in ${formatDuration(durationSec)}")
                     if (newPrs.isNotEmpty()) append(" \u00b7 New PR: ${newPrs.joinToString()}")
                     if (incomplete > 0) append(" \u00b7 skipped $incomplete incomplete")
                 })
@@ -369,13 +429,17 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun updateLoggedSet(setId: Long, weightText: String, repsText: String) {
+    fun updateLoggedSet(setId: Long, weightText: String, repsText: String, toFailure: Boolean, forcedReps: Int) {
         viewModelScope.launch {
             val set = workoutDao.getSetById(setId) ?: return@launch
             val w = parseWeight(weightText)
             val r = repsText.toIntOrNull()
             if (w == null || w < 0f || r == null || r <= 0) { postEvent("Enter a valid weight and reps"); return@launch }
-            workoutDao.updateSet(set.copy(weight = displayToLbs(w, _weightUnit.value), reps = r))
+            workoutDao.updateSet(set.copy(
+                weight = displayToLbs(w, _weightUnit.value), reps = r,
+                toFailure = toFailure,
+                forcedReps = if (toFailure) forcedReps.coerceIn(0, MAX_FORCED_REPS) else 0
+            ))
             postEvent("Set updated")
         }
     }
@@ -513,6 +577,12 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean(PREF_TRACK_FAILURE, on).apply()
     }
 
+    fun setRepRange(min: Int, max: Int) {
+        if (min < 1 || max < min) return
+        _repRange.value = min..max
+        prefs.edit().putInt(PREF_REP_MIN, min).putInt(PREF_REP_MAX, max).apply()
+    }
+
     fun setRecoveryDays(days: Int) {
         _recoveryDays.value = days
         prefs.edit().putInt(PREF_RECOVERY_DAYS, days).apply()
@@ -564,13 +634,15 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
             val file = File(dir, "mentzer_history_${formatDate(System.currentTimeMillis(), "yyyyMMdd")}.csv")
             file.bufferedWriter().use { w ->
-                w.append("Date,Exercise,Set,Weight (${unit.label}),Reps,Est. 1RM (${unit.label}),Notes\n")
+                w.append("Date,Exercise,Set,Weight (${unit.label}),Reps,To failure,Forced reps,Est. 1RM (${unit.label}),Session (min),Notes\n")
                 rows.forEach { r ->
                     val weight = lbsToDisplay(r.weight, unit)
                     w.append(listOf(
                         formatDate(r.sessionDate, "yyyy-MM-dd HH:mm"),
                         r.exerciseName, r.setNumber.toString(), formatWeight(weight), r.reps.toString(),
-                        formatWeight(estimated1RM(weight, r.reps)), r.notes
+                        if (r.toFailure) "yes" else "no", r.forcedReps.toString(),
+                        formatWeight(estimated1RM(weight, r.reps)),
+                        if (r.durationSec > 0) (r.durationSec / 60).toString() else "", r.notes
                     ).joinToString(",") { csvEscape(it) }).append('\n')
                 }
             }
@@ -601,6 +673,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 } ?: throw IOException("Couldn't read that file")
                 val s = BackupManager.importJson(db, text)
                 setInputs(emptyMap())
+                setSessionStart(null)
                 clearTemplateFilter()
                 postEvent("Restored ${s.exercises} exercises, ${s.templates} templates, ${s.sessions} sessions")
             } catch (e: Exception) {
@@ -612,6 +685,12 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     // ==================================================================
     // Helpers
     // ==================================================================
+
+    private fun loadRepRange(): IntRange {
+        val lo = prefs.getInt(PREF_REP_MIN, DEFAULT_REP_MIN)
+        val hi = prefs.getInt(PREF_REP_MAX, DEFAULT_REP_MAX)
+        return if (lo >= 1 && hi >= lo) lo..hi else DEFAULT_REP_MIN..DEFAULT_REP_MAX
+    }
 
     private fun saveDraft(map: Map<Long, List<SetInput>>) {
         val o = JSONObject()
@@ -645,6 +724,13 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         const val MAX_SETS = 10
         const val MAX_FORCED_REPS = 20
         const val DEFAULT_RECOVERY_DAYS = 5
+        const val DEFAULT_REP_MIN = 6
+        const val DEFAULT_REP_MAX = 10
+
+        /** Heavy Duty workouts are short and brutal; past this the Today clock and History nudge you. */
+        const val SESSION_TARGET_MIN = 45
+        /** A session clock older than this is assumed abandoned (draft left overnight, etc.). */
+        const val SESSION_STALE_MS = 3 * 60 * 60 * 1000L
 
         private const val PREF_UNIT = "weight_unit"
         private const val PREF_DRAFT = "draft_inputs"
@@ -654,6 +740,9 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_TIMER_MIN = "timer_minutes"
         private const val PREF_TRACK_FAILURE = "track_failure"
         private const val PREF_RECOVERY_DAYS = "recovery_days"
+        private const val PREF_REP_MIN = "rep_min"
+        private const val PREF_REP_MAX = "rep_max"
+        private const val PREF_SESSION_START = "session_started_at"
 
         fun computePrs(sets: List<SetWithExercise>): Map<Long, PrInfo> =
             sets.groupBy { it.exerciseId }.mapNotNull { (exId, list) ->

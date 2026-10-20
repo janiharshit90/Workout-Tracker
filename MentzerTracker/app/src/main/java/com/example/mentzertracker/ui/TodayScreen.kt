@@ -19,8 +19,10 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -52,6 +54,8 @@ fun TodayScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
     val history by vm.history.collectAsState()
     val trackFailure by vm.trackFailure.collectAsState()
     val recoveryDays by vm.recoveryDays.collectAsState()
+    val suggestions by vm.suggestions.collectAsState()
+    val sessionStart by vm.sessionStartedAt.collectAsState()
 
     var showAddExercise by remember { mutableStateOf(false) }
     var showAddTemplate by remember { mutableStateOf(false) }
@@ -96,6 +100,10 @@ fun TodayScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
         }
 
         item { RestTimerCard(vm) }
+
+        sessionStart?.let { start ->
+            item(key = "session_clock") { SessionClockCard(start, onReset = { vm.resetSession() }) }
+        }
 
         item {
             Column {
@@ -179,6 +187,8 @@ fun TodayScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
                 pr = prs[ex.id],
                 trackFailure = trackFailure,
                 recoveryDays = recoveryDays,
+                suggestion = suggestions[ex.id],
+                onApplySuggestion = { vm.applySuggestion(ex.id) },
                 onWeight = { idx, v -> vm.updateSet(ex.id, idx, weight = v) },
                 onReps = { idx, v -> vm.updateSet(ex.id, idx, reps = v) },
                 onToggleFailure = { idx -> vm.toggleFailure(ex.id, idx) },
@@ -206,6 +216,46 @@ fun TodayScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
             }
         }
         item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+/**
+ * Live workout stopwatch. Heavy Duty sessions are short and brutal, so once it passes the
+ * target it turns red as a nudge to wrap up - purely informational, never blocks anything.
+ */
+@Composable
+private fun SessionClockCard(startedAt: Long, onReset: () -> Unit) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(startedAt) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val elapsedMs = now - startedAt
+    if (elapsedMs > WorkoutViewModel.SESSION_STALE_MS) return  // abandoned; the next entry restarts it
+    val over = elapsedMs / 60_000L >= WorkoutViewModel.SESSION_TARGET_MIN
+    val accent = if (over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Schedule, null, tint = accent)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Workout ${formatClock(elapsedMs / 1000)}", fontWeight = FontWeight.SemiBold, color = accent)
+                Text(
+                    if (over) "Past ${WorkoutViewModel.SESSION_TARGET_MIN} min \u2014 wrap it up. Brief and intense."
+                    else "Aim to finish within ${WorkoutViewModel.SESSION_TARGET_MIN} min",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            TextButton(onClick = onReset) { Text("Reset") }
+        }
     }
 }
 
@@ -278,6 +328,8 @@ private fun ExerciseCard(
     pr: PrInfo?,
     trackFailure: Boolean,
     recoveryDays: Int,
+    suggestion: Suggestion?,
+    onApplySuggestion: () -> Unit,
     onWeight: (Int, String) -> Unit,
     onReps: (Int, String) -> Unit,
     onToggleFailure: (Int) -> Unit,
@@ -347,6 +399,22 @@ private fun ExerciseCard(
                                     last.joinToString(", ") { "${formatWeight(lbsToDisplay(it.weight, unit))}\u00d7${it.reps}" },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    if (suggestion != null) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable(onClick = onApplySuggestion)
+                        ) {
+                            Icon(Icons.Filled.TrendingUp, null, Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.secondary)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                suggestion.describe(unit) + " \u00b7 tap to use",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.secondary,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis
                             )
                         }
