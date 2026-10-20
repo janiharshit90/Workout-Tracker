@@ -51,7 +51,8 @@ object BackupManager {
                         .put("sessionDate", it.sessionDate).put("setNumber", it.setNumber)
                         .put("weight", it.weight.toDouble()).put("reps", it.reps)
                         .put("notes", it.notes)
-                        .put("toFailure", it.toFailure).put("forcedReps", it.forcedReps))
+                        .put("toFailure", it.toFailure).put("forcedReps", it.forcedReps)
+                        .put("durationSec", it.durationSec))
                 }
             })
             .toString(2)
@@ -89,7 +90,8 @@ object BackupManager {
                     sessionDate = o.getLong("sessionDate"), setNumber = o.getInt("setNumber"),
                     weight = o.getDouble("weight").toFloat(), reps = o.getInt("reps"),
                     notes = o.optString("notes", ""),
-                    toFailure = o.optBoolean("toFailure", false), forcedReps = o.optInt("forcedReps", 0))
+                    toFailure = o.optBoolean("toFailure", false), forcedReps = o.optInt("forcedReps", 0),
+                    durationSec = o.optInt("durationSec", 0))
             }.filter { it.exerciseId in exIds }
 
             db.withTransaction {

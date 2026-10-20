@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,10 +38,12 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
             title = "${s.exerciseName} \u00b7 set ${s.setNumber}",
             initialWeight = formatWeight(lbsToDisplay(s.weight, unit)),
             initialReps = s.reps.toString(),
+            initialToFailure = s.toFailure,
+            initialForcedReps = s.forcedReps,
             unitLabel = unit.label,
             onDismiss = { editing = null },
             onDelete = { vm.deleteSet(s.id); editing = null },
-            onConfirm = { w, r -> vm.updateLoggedSet(s.id, w, r); editing = null }
+            onConfirm = { w, r, f, fr -> vm.updateLoggedSet(s.id, w, r, f, fr); editing = null }
         )
     }
 
@@ -83,6 +86,22 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
                                 "%,d ${unit.label} volume".format(volume.roundToLong()),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // Session length (0 = unknown, e.g. sessions logged before this existed).
+                        val durationSec = sets.maxOf { it.durationSec }
+                        if (durationSec > 0) {
+                            val long = durationSec / 60 >= WorkoutViewModel.SESSION_TARGET_MIN
+                            val tint = if (long) MaterialTheme.colorScheme.error
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.Timer, null, Modifier.size(12.dp), tint = tint)
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    formatDuration(durationSec) +
+                                        if (long) " \u00b7 over the ${WorkoutViewModel.SESSION_TARGET_MIN}-min target" else "",
+                                    style = MaterialTheme.typography.labelSmall, color = tint
+                                )
+                            }
+                        }
                     }
                     IconButton(onClick = { vm.deleteSession(date) }) {
                         Icon(Icons.Filled.Delete, "Delete session")

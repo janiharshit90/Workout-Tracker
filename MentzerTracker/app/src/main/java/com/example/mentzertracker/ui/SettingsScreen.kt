@@ -42,6 +42,7 @@ fun SettingsScreen(
     val keepOn by vm.keepScreenOn.collectAsState()
     val trackFailure by vm.trackFailure.collectAsState()
     val recoveryDays by vm.recoveryDays.collectAsState()
+    val repRange by vm.repRange.collectAsState()
     val autoCheck by updateVm.autoCheck.collectAsState()
     val lastChecked by updateVm.lastChecked.collectAsState()
     val updateState by updateVm.state.collectAsState()
@@ -120,6 +121,24 @@ fun SettingsScreen(
                             selected = recoveryDays == d,
                             onClick = { vm.setRecoveryDays(d) },
                             label = { Text("${d}d") }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text("Target rep range", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Drives Today's progression hint: hit the top of the range, then add weight " +
+                    "and work back up from the bottom",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(4 to 8, 6 to 10, 8 to 12).forEach { (lo, hi) ->
+                        FilterChip(
+                            selected = repRange.first == lo && repRange.last == hi,
+                            onClick = { vm.setRepRange(lo, hi) },
+                            label = { Text("$lo\u2013$hi") }
                         )
                     }
                 }

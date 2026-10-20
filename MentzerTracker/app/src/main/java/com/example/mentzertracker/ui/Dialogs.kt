@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -12,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.example.mentzertracker.WorkoutViewModel
 import com.example.mentzertracker.data.Exercise
 import com.example.mentzertracker.util.parseWeight
 import com.example.mentzertracker.util.sanitizeRepsInput
@@ -125,36 +130,73 @@ fun EditSetDialog(
     title: String,
     initialWeight: String,
     initialReps: String,
+    initialToFailure: Boolean,
+    initialForcedReps: Int,
     unitLabel: String,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
-    onConfirm: (weight: String, reps: String) -> Unit
+    onConfirm: (weight: String, reps: String, toFailure: Boolean, forcedReps: Int) -> Unit
 ) {
     var weight by remember { mutableStateOf(initialWeight) }
     var reps by remember { mutableStateOf(initialReps) }
+    var toFailure by remember { mutableStateOf(initialToFailure) }
+    var forced by remember { mutableStateOf(initialForcedReps) }
     val valid = parseWeight(weight) != null && (reps.toIntOrNull() ?: 0) > 0
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = weight, onValueChange = { weight = sanitizeWeightInput(it) },
-                    label = { Text("Weight ($unitLabel)") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = reps, onValueChange = { reps = sanitizeRepsInput(it) },
-                    label = { Text("Reps") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f)
-                )
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = weight, onValueChange = { weight = sanitizeWeightInput(it) },
+                        label = { Text("Weight ($unitLabel)") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = reps, onValueChange = { reps = sanitizeRepsInput(it) },
+                        label = { Text("Reps") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    Modifier.fillMaxWidth().clickable { toFailure = !toFailure; if (!toFailure) forced = 0 },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.LocalFireDepartment, null, Modifier.size(20.dp),
+                        tint = if (toFailure) MaterialTheme.colorScheme.error
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Taken to failure", Modifier.weight(1f))
+                    Switch(checked = toFailure, onCheckedChange = { toFailure = it; if (!it) forced = 0 })
+                }
+                if (toFailure) {
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Forced reps (with a spot)", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { forced = (forced - 1).coerceAtLeast(0) }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Filled.Remove, "Fewer forced reps", Modifier.size(18.dp))
+                        }
+                        Text("$forced", style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp))
+                        IconButton(
+                            onClick = { forced = (forced + 1).coerceAtMost(WorkoutViewModel.MAX_FORCED_REPS) },
+                            modifier = Modifier.size(32.dp)
+                        ) { Icon(Icons.Filled.Add, "More forced reps", Modifier.size(18.dp)) }
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(weight, reps) }, enabled = valid) { Text("Save") }
+            TextButton(onClick = { onConfirm(weight, reps, toFailure, if (toFailure) forced else 0) }, enabled = valid) {
+                Text("Save")
+            }
         },
         dismissButton = {
             Row {
