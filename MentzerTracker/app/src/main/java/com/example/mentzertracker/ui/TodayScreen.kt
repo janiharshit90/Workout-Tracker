@@ -13,10 +13,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
@@ -30,9 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.mentzertracker.PrInfo
 import com.example.mentzertracker.SetInput
 import com.example.mentzertracker.WorkoutViewModel
 import com.example.mentzertracker.data.Exercise
@@ -50,7 +49,6 @@ fun TodayScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
     val templateIds by vm.templateExerciseIds.collectAsState()
     val unit by vm.weightUnit.collectAsState()
     val lastSessions by vm.lastSessions.collectAsState()
-    val prs by vm.prs.collectAsState()
     val history by vm.history.collectAsState()
     val trackFailure by vm.trackFailure.collectAsState()
     val recoveryDays by vm.recoveryDays.collectAsState()
@@ -86,35 +84,29 @@ fun TodayScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
         )
     }
 
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            ScreenTitle(
-                title = "Today",
-                subtitle = if (lastWorkout == null) "No workouts logged yet"
-                           else "Last workout ${relativeDay(lastWorkout)} \u00b7 recover fully between sessions"
-            )
-        }
+    // Avoids flashing the first-run guide for a split second at startup, before history loads.
+    var historyLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(500); historyLoaded = true }
+    val showGuide = historyLoaded && history.isEmpty() && !hasAnyInput
 
-        item { RestTimerCard(vm) }
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.weight(1f),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                ScreenTitle(
+                    title = "Today",
+                    subtitle = if (lastWorkout == null) null
+                               else "Last workout ${relativeDay(lastWorkout)}"
+                )
+            }
 
-        sessionStart?.let { start ->
-            item(key = "session_clock") { SessionClockCard(start, onReset = { vm.resetSession() }) }
-        }
+            if (showGuide) item(key = "guide") { FirstRunGuide() }
 
-        item {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Template", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { showAddTemplate = true }) {
-                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("New")
-                    }
-                }
+            // 1) Pick the workout. Chips first: it's the first decision of every session.
+            item {
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -131,97 +123,133 @@ fun TodayScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
                             label = { Text(t.name) }
                         )
                     }
+                    AssistChip(
+                        onClick = { showAddTemplate = true },
+                        label = { Text("New") },
+                        leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(16.dp)) }
+                    )
                 }
             }
-        }
 
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Heavy Duty mode", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (heavy) "One all-out set to failure per exercise"
-                            else "Multiple sets per exercise",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+            // 2) One quiet line for the mode, instead of a whole card.
+            item {
+                Row(
+                    Modifier.fillMaxWidth().clickable { vm.toggleHeavyDuty() },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Heavy Duty mode", modifier = Modifier.weight(1f))
+                    Text(
+                        if (heavy) "1 all-out set each" else "multiple sets",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 10.dp)
+                    )
                     Switch(checked = heavy, onCheckedChange = { vm.toggleHeavyDuty() })
                 }
             }
+
+            sessionStart?.let { start ->
+                item(key = "session_clock") { SessionClockCard(start, onReset = { vm.resetSession() }) }
+            }
+
+            item { RestTimerCard(vm) }
+
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("Exercises", style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    if (hasAnyInput) TextButton(onClick = { vm.clearInputs() }) { Text("Clear") }
+                    TextButton(onClick = { showAddExercise = true }) {
+                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Exercise")
+                    }
+                }
+            }
+
+            if (visibleExercises.isEmpty()) {
+                item {
+                    EmptyMessage(
+                        if (selectedTemplateId != null) "This template has no exercises.\nEdit it in Settings \u2192 Manage Templates."
+                        else "No exercises yet. Tap \"+ Exercise\" to add one."
+                    )
+                }
+            }
+
+            items(visibleExercises, key = { it.id }) { ex ->
+                val sets = inputs[ex.id] ?: List(WorkoutViewModel.DEFAULT_SETS) { SetInput() }
+                ExerciseCard(
+                    exercise = ex,
+                    sets = if (heavy) sets.take(1) else sets,
+                    heavy = heavy,
+                    unit = unit,
+                    last = lastSessions[ex.id],
+                    trackFailure = trackFailure,
+                    recoveryDays = recoveryDays,
+                    suggestion = suggestions[ex.id],
+                    onApplySuggestion = { vm.applySuggestion(ex.id) },
+                    onWeight = { idx, v -> vm.updateSet(ex.id, idx, weight = v) },
+                    onReps = { idx, v -> vm.updateSet(ex.id, idx, reps = v) },
+                    onToggleFailure = { idx -> vm.toggleFailure(ex.id, idx) },
+                    onForcedReps = { idx, delta -> vm.adjustForcedReps(ex.id, idx, delta) },
+                    onAddSet = { vm.addSet(ex.id) },
+                    onRemoveSet = { vm.removeSet(ex.id) },
+                    onFillLast = { vm.fillFromLast(ex.id) },
+                    onOpenProgress = { onOpenProgress(ex.id) }
+                )
+            }
         }
 
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Exercises", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                if (hasAnyInput) TextButton(onClick = { vm.clearInputs() }) { Text("Clear") }
-                TextButton(onClick = { showAddExercise = true }) {
-                    Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Exercise")
+        // Pinned so you never have to scroll back down to finish: appears once you've typed something.
+        if (hasAnyInput) {
+            Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+                Button(
+                    onClick = { vm.logWorkout() },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).height(52.dp)
+                ) {
+                    Icon(Icons.Filled.Check, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (readySets > 0) "LOG WORKOUT \u00b7 $readySets SET${if (readySets == 1) "" else "S"}"
+                        else "LOG WORKOUT",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
+    }
+}
 
-        if (visibleExercises.isEmpty()) {
-            item {
-                EmptyMessage(
-                    if (selectedTemplateId != null) "This template has no exercises.\nEdit it in Settings \u2192 Manage Templates."
-                    else "No exercises yet. Tap \"+ Exercise\" to add one."
-                )
+/** Shown only until the very first workout is logged. */
+@Composable
+private fun FirstRunGuide() {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Getting started", fontWeight = FontWeight.Bold)
+            listOf(
+                "Pick a template below (or stay on All)",
+                "Enter the weight and reps you did",
+                "Tap LOG WORKOUT at the bottom"
+            ).forEachIndexed { i, step ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${i + 1}", color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold, modifier = Modifier.width(22.dp))
+                    Text(step, style = MaterialTheme.typography.bodyMedium)
+                }
             }
+            Text("Heavy Duty = one all-out set to failure per exercise. Switch it on below.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-
-        items(visibleExercises, key = { it.id }) { ex ->
-            val sets = inputs[ex.id] ?: List(WorkoutViewModel.DEFAULT_SETS) { SetInput() }
-            ExerciseCard(
-                exercise = ex,
-                sets = if (heavy) sets.take(1) else sets,
-                heavy = heavy,
-                unit = unit,
-                last = lastSessions[ex.id],
-                pr = prs[ex.id],
-                trackFailure = trackFailure,
-                recoveryDays = recoveryDays,
-                suggestion = suggestions[ex.id],
-                onApplySuggestion = { vm.applySuggestion(ex.id) },
-                onWeight = { idx, v -> vm.updateSet(ex.id, idx, weight = v) },
-                onReps = { idx, v -> vm.updateSet(ex.id, idx, reps = v) },
-                onToggleFailure = { idx -> vm.toggleFailure(ex.id, idx) },
-                onForcedReps = { idx, delta -> vm.adjustForcedReps(ex.id, idx, delta) },
-                onAddSet = { vm.addSet(ex.id) },
-                onRemoveSet = { vm.removeSet(ex.id) },
-                onFillLast = { vm.fillFromLast(ex.id) },
-                onOpenProgress = { onOpenProgress(ex.id) }
-            )
-        }
-
-        item {
-            Button(
-                onClick = { vm.logWorkout() },
-                enabled = hasAnyInput,
-                modifier = Modifier.fillMaxWidth().height(56.dp)
-            ) {
-                Icon(Icons.Filled.Check, null)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (readySets > 0) "LOG WORKOUT \u00b7 $readySets SET${if (readySets == 1) "" else "S"}"
-                    else "LOG WORKOUT",
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
 /**
- * Live workout stopwatch. Heavy Duty sessions are short and brutal, so once it passes the
- * target it turns red as a nudge to wrap up - purely informational, never blocks anything.
+ * Live workout stopwatch, one slim row. Heavy Duty sessions are short and brutal, so past the
+ * target it turns red as a nudge to wrap up - informational only, never blocks anything.
  */
 @Composable
 private fun SessionClockCard(startedAt: Long, onReset: () -> Unit) {
@@ -241,24 +269,20 @@ private fun SessionClockCard(startedAt: Long, onReset: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Schedule, null, tint = accent)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Workout ${formatClock(elapsedMs / 1000)}", fontWeight = FontWeight.SemiBold, color = accent)
-                Text(
-                    if (over) "Past ${WorkoutViewModel.SESSION_TARGET_MIN} min \u2014 wrap it up. Brief and intense."
-                    else "Aim to finish within ${WorkoutViewModel.SESSION_TARGET_MIN} min",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        Row(Modifier.padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Schedule, null, Modifier.size(20.dp), tint = accent)
+            Spacer(Modifier.width(8.dp))
+            Text("Workout ${formatClock(elapsedMs / 1000)}", fontWeight = FontWeight.SemiBold, color = accent)
+            if (over) {
+                Text("  \u00b7 wrap it up", style = MaterialTheme.typography.bodySmall, color = accent)
             }
+            Spacer(Modifier.weight(1f))
             TextButton(onClick = onReset) { Text("Reset") }
         }
     }
 }
 
+/** Rest timer in one row. Tap the minutes to cycle 3 -> 4 -> 5 min. */
 @Composable
 private fun RestTimerCard(vm: WorkoutViewModel) {
     val endAt by vm.timerEndAt.collectAsState()
@@ -277,42 +301,33 @@ private fun RestTimerCard(vm: WorkoutViewModel) {
     val remainingSec = endAt?.let { ((it - now).coerceAtLeast(0L) + 999) / 1000 } ?: (minutes * 60L)
 
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Timer, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Rest timer", fontWeight = FontWeight.SemiBold)
-                    Text("3\u20135 min between sets", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        Row(
+            Modifier.padding(start = 14.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Timer, contentDescription = null,
+                tint = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text("Rest timer", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "%d:%02d".format(remainingSec / 60, remainingSec % 60),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (running) {
-                    Text("Vibrates when done, even on other tabs",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = { vm.addTimerSeconds(30) }) { Text("+30s") }
-                    Button(onClick = { vm.stopTimer() }) { Text("Stop") }
-                } else {
-                    listOf(3, 4, 5).forEach { m ->
-                        FilterChip(
-                            selected = minutes == m,
-                            onClick = { vm.setTimerMinutes(m) },
-                            label = { Text("${m}m") }
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Button(onClick = { vm.startTimer() }) { Text("Start") }
+            Spacer(Modifier.weight(1f))
+            if (running) {
+                OutlinedButton(onClick = { vm.addTimerSeconds(30) }) { Text("+30s") }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { vm.stopTimer() }) { Text("Stop") }
+            } else {
+                TextButton(onClick = { vm.setTimerMinutes(if (minutes >= 5) 3 else minutes + 1) }) {
+                    Text("$minutes min")
                 }
+                Button(onClick = { vm.startTimer() }) { Text("Start") }
             }
         }
     }
@@ -325,7 +340,6 @@ private fun ExerciseCard(
     heavy: Boolean,
     unit: WeightUnit,
     last: List<SetWithExercise>?,
-    pr: PrInfo?,
     trackFailure: Boolean,
     recoveryDays: Int,
     suggestion: Suggestion?,
@@ -339,97 +353,76 @@ private fun ExerciseCard(
     onFillLast: () -> Unit,
     onOpenProgress: () -> Unit
 ) {
+    // The form cue is one tap away instead of always taking up a line.
+    var showCue by remember { mutableStateOf(false) }
+
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(exercise.name, style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (exercise.cue.isNotBlank()) {
+                    IconButton(onClick = { showCue = !showCue }) {
+                        Icon(Icons.Filled.Info, if (showCue) "Hide form cue" else "Show form cue",
+                            tint = if (showCue) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 IconButton(onClick = onOpenProgress) {
                     Icon(Icons.Filled.ShowChart, "Progress for ${exercise.name}",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (exercise.cue.isNotBlank()) {
+            if (showCue && exercise.cue.isNotBlank()) {
                 Text(exercise.cue, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(end = 8.dp))
+                    modifier = Modifier.padding(end = 8.dp, bottom = 4.dp))
             }
 
-            // Recovery: Mentzer's HIT philosophy grows muscle between sessions, not during
-            // them. This is informational only - it never blocks logging.
+            // Recovery only speaks up when you're still recovering (informational, never blocks
+            // logging). "Recovered" is the default state, so it no longer needs a line of its own.
             val daysSinceTrained = last?.firstOrNull()?.sessionDate?.let { daysAgo(it) }
-            if (daysSinceTrained != null) {
-                val ready = daysSinceTrained >= recoveryDays
+            if (daysSinceTrained != null && daysSinceTrained < recoveryDays) {
+                val left = recoveryDays - daysSinceTrained
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 8.dp)) {
+                    Icon(Icons.Filled.HourglassEmpty, null, Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Recovering \u00b7 $left day${if (left == 1) "" else "s"} left",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            // What to beat: one muted line for last time, one tappable chip for the target.
+            if (last != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = 4.dp, end = 8.dp)
                 ) {
-                    Icon(
-                        if (ready) Icons.Filled.CheckCircle else Icons.Filled.HourglassEmpty,
-                        null, Modifier.size(13.dp),
-                        tint = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Icon(Icons.Filled.History, null, Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        if (ready) "Recovered \u00b7 ready to train"
-                        else {
-                            val left = recoveryDays - daysSinceTrained
-                            "Recovering \u00b7 $left day${if (left == 1) "" else "s"} left"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        "Last (${relativeDay(last.first().sessionDate)}): " +
+                            last.joinToString(", ") { "${formatWeight(lbsToDisplay(it.weight, unit))}\u00d7${it.reps}" },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-
-            // What to beat: the core of progressive overload.
-            if (last != null || pr != null) {
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.padding(end = 8.dp)) {
-                    if (last != null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable(onClick = onFillLast)
-                        ) {
-                            Icon(Icons.Filled.History, null, Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                "Last (${relativeDay(last.first().sessionDate)}): " +
-                                    last.joinToString(", ") { "${formatWeight(lbsToDisplay(it.weight, unit))}\u00d7${it.reps}" },
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    if (suggestion != null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable(onClick = onApplySuggestion)
-                        ) {
-                            Icon(Icons.Filled.TrendingUp, null, Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.secondary)
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                suggestion.describe(unit) + " \u00b7 tap to use",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.secondary,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    if (pr != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.EmojiEvents, null, Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(4.dp))
-                            Text("PR: ${formatWeight(lbsToDisplay(pr.weight, unit))} ${unit.label} \u00d7 ${pr.reps}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
+            if (suggestion != null) {
+                AssistChip(
+                    onClick = onApplySuggestion,
+                    label = { Text(suggestion.describe(unit), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = { Icon(Icons.Filled.TrendingUp, null, Modifier.size(16.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        labelColor = MaterialTheme.colorScheme.secondary,
+                        leadingIconContentColor = MaterialTheme.colorScheme.secondary
+                    ),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
             Spacer(Modifier.height(8.dp))
 
@@ -441,7 +434,10 @@ private fun ExerciseCard(
                 Spacer(Modifier.width(6.dp))
                 Text("Reps", Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (trackFailure) Spacer(Modifier.width(36.dp))
+                // Labels the flame column so it's no longer a mystery icon.
+                if (trackFailure) Text("Failure", Modifier.width(36.dp), textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             sets.forEachIndexed { idx, s ->
@@ -484,7 +480,7 @@ private fun ExerciseCard(
                         Modifier.fillMaxWidth().padding(start = 28.dp, end = 8.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Forced reps (with a spot)", style = MaterialTheme.typography.labelSmall,
+                        Text("Forced reps (spotted)", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                         IconButton(onClick = { onForcedReps(idx, -1) }, modifier = Modifier.size(28.dp)) {
                             Icon(Icons.Filled.Remove, null, Modifier.size(16.dp))
