@@ -43,6 +43,7 @@ fun SettingsScreen(
     val trackFailure by vm.trackFailure.collectAsState()
     val recoveryDays by vm.recoveryDays.collectAsState()
     val repRange by vm.repRange.collectAsState()
+    val timerMinutes by vm.timerMinutes.collectAsState()
     val autoCheck by updateVm.autoCheck.collectAsState()
     val lastChecked by updateVm.lastChecked.collectAsState()
     val updateState by updateVm.state.collectAsState()
@@ -96,6 +97,21 @@ fun SettingsScreen(
         item {
             SettingsSection("Workout") {
                 SwitchRow("Keep screen on", "While on Today or while the rest timer runs", keepOn, vm::setKeepScreenOn)
+                Spacer(Modifier.height(10.dp))
+                Text("Rest timer length", style = MaterialTheme.typography.bodyMedium)
+                Text("Used by the Start rest button during a workout",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(2, 3, 4, 5).forEach { m ->
+                        FilterChip(
+                            selected = timerMinutes == m,
+                            onClick = { vm.setTimerMinutes(m) },
+                            label = { Text("$m min") }
+                        )
+                    }
+                }
             }
         }
 
