@@ -104,7 +104,9 @@ fun AppRoot(vm: WorkoutViewModel, updateVm: UpdateViewModel) {
         }
     ) { pad ->
         NavHost(nav, startDestination = "today", modifier = Modifier.padding(pad)) {
-            composable("today") { TodayScreen(vm, onOpenProgress = openProgress) }
+            composable("today") {
+                TodayScreen(vm, onOpenProgress = openProgress, onOpenPrinciples = { nav.navigate("principles") })
+            }
             composable("history") { HistoryScreen(vm, onOpenProgress = openProgress) }
             composable("prs") { PRsScreen(vm, onExerciseClick = openProgress) }
             composable("settings") {

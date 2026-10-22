@@ -41,6 +41,9 @@ data class UiEvent(
     val action: (() -> Unit)? = null
 )
 
+/** A workout in progress: its display name and the exercises in it, in order. */
+data class ActiveWorkout(val name: String, val exerciseIds: List<Long>)
+
 /** A personal record derived from logged sets (weights in lbs). */
 data class PrInfo(val exerciseId: Long, val weight: Float, val reps: Int, val date: Long) {
     val e1rm: Float get() = estimated1RM(weight, reps)
@@ -96,13 +99,16 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     private val _heavyDutyMode = MutableStateFlow(prefs.getBoolean(PREF_HEAVY, false))
     val heavyDutyMode: StateFlow<Boolean> = _heavyDutyMode
 
-    private val _selectedTemplateId = MutableStateFlow<Long?>(null)
-    val selectedTemplateId: StateFlow<Long?> = _selectedTemplateId
+    /**
+     * The workout in progress (guided flow: pick a template, then go exercise by exercise).
+     * Null = nothing in progress, so Today shows the start screen. Persisted, so an app
+     * kill mid-workout resumes exactly where you were.
+     */
+    private val _activeWorkout = MutableStateFlow(loadActiveWorkout())
+    val activeWorkout: StateFlow<ActiveWorkout?> = _activeWorkout
 
-    /** Ordered exercise ids of the selected template, or null for "All". */
-    val templateExerciseIds: StateFlow<List<Long>?> =
-        combine(_selectedTemplateId, templateExercises) { id, map -> id?.let { map[it].orEmpty() } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    private val _introDismissed = MutableStateFlow(prefs.getBoolean(PREF_INTRO_DISMISSED, false))
+    val introDismissed: StateFlow<Boolean> = _introDismissed
 
     private val _weightUnit = MutableStateFlow(
         runCatching { WeightUnit.valueOf(prefs.getString(PREF_UNIT, null) ?: "") }.getOrDefault(WeightUnit.LBS)
@@ -172,12 +178,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             if (exerciseDao.count() == 0) seedDefaults()
-            val saved = prefs.getLong(PREF_TEMPLATE, -1L)
-            if (saved > 0 && templateDao.getAllTemplatesOnce().any { it.id == saved }) {
-                _selectedTemplateId.value = saved
-            } else {
-                prefs.edit().remove(PREF_TEMPLATE).apply()
-            }
+            prefs.edit().remove("selected_template").apply()  // old Today template filter, now unused
         }
     }
 
@@ -195,18 +196,74 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ==================================================================
-    // Templates filter
+    // Guided workout
     // ==================================================================
 
-    /** Filters Today to a template. Does NOT wipe what you've already typed. */
-    fun selectTemplate(templateId: Long) {
-        _selectedTemplateId.value = templateId
-        prefs.edit().putLong(PREF_TEMPLATE, templateId).apply()
+    /** Starts a workout from a template, or an empty "custom" one when [templateId] is null. */
+    fun startWorkout(templateId: Long?) {
+        viewModelScope.launch {
+            val existing = exerciseDao.getAllOnce().map { it.id }.toSet()
+            val name: String
+            val ids: List<Long>
+            if (templateId == null) {
+                name = "Custom workout"; ids = emptyList()
+            } else {
+                val t = templateDao.getAllTemplatesOnce().firstOrNull { it.id == templateId } ?: return@launch
+                name = t.name
+                ids = templateDao.getExerciseIdsForTemplate(templateId).filter { it in existing }
+                if (ids.isEmpty()) {
+                    postEvent("\"$name\" has no exercises. Edit it in Settings \u2192 Manage templates.")
+                    return@launch
+                }
+            }
+            setInputs(emptyMap())
+            setSessionStart(System.currentTimeMillis())
+            setActiveWorkout(ActiveWorkout(name, ids))
+        }
     }
 
-    fun clearTemplateFilter() {
-        _selectedTemplateId.value = null
-        prefs.edit().remove(PREF_TEMPLATE).apply()
+    fun addToWorkout(exerciseId: Long) {
+        val w = _activeWorkout.value ?: return
+        if (exerciseId !in w.exerciseIds) setActiveWorkout(w.copy(exerciseIds = w.exerciseIds + exerciseId))
+    }
+
+    fun removeFromWorkout(exerciseId: Long) {
+        val w = _activeWorkout.value ?: return
+        if (exerciseId in _inputs.value) setInputs(_inputs.value - exerciseId)
+        setActiveWorkout(w.copy(exerciseIds = w.exerciseIds - exerciseId))
+    }
+
+    /** Throws away the workout in progress (the UI confirms first). */
+    fun cancelWorkout() {
+        setInputs(emptyMap())
+        setSessionStart(null)
+        setActiveWorkout(null)
+    }
+
+    fun dismissIntro() {
+        _introDismissed.value = true
+        prefs.edit().putBoolean(PREF_INTRO_DISMISSED, true).apply()
+    }
+
+    private fun setActiveWorkout(w: ActiveWorkout?) {
+        _activeWorkout.value = w
+        prefs.edit().apply {
+            if (w == null) remove(PREF_ACTIVE) else putString(PREF_ACTIVE,
+                JSONObject().put("name", w.name).put("ids", JSONArray(w.exerciseIds)).toString())
+        }.apply()
+    }
+
+    private fun loadActiveWorkout(): ActiveWorkout? {
+        try {
+            prefs.getString(PREF_ACTIVE, null)?.let { raw ->
+                val o = JSONObject(raw)
+                val arr = o.getJSONArray("ids")
+                return ActiveWorkout(o.optString("name", "Workout"), List(arr.length()) { arr.getLong(it) })
+            }
+        } catch (e: Exception) { /* fall through to draft adoption */ }
+        // A draft saved before guided workouts existed: adopt it as a workout in progress.
+        val withInput = _inputs.value.filter { (_, sets) -> sets.any { !it.isEmpty } }.keys.sorted()
+        return if (withInput.isEmpty()) null else ActiveWorkout("Workout", withInput)
     }
 
     fun toggleHeavyDuty() {
@@ -325,8 +382,6 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().apply { if (t == null) remove(PREF_SESSION_START) else putLong(PREF_SESSION_START, t) }.apply()
     }
 
-    /** Restarts the clock from now (e.g. it started by accident while you were setting up). */
-    fun resetSession() = setSessionStart(System.currentTimeMillis())
 
     // ==================================================================
     // Logging
@@ -390,6 +445,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
 
                 setInputs(emptyMap())
                 setSessionStart(null)
+                setActiveWorkout(null)
                 postEvent(buildString {
                     append(if (heavy) "Heavy Duty session logged" else "Workout logged (${toInsert.size} sets)")
                     if (durationSec > 0) append(" in ${formatDuration(durationSec)}")
@@ -495,6 +551,9 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 exerciseDao.deleteById(id)
             }
             if (id in _inputs.value) setInputs(_inputs.value - id)
+            _activeWorkout.value?.let { w ->
+                if (id in w.exerciseIds) setActiveWorkout(w.copy(exerciseIds = w.exerciseIds - id))
+            }
             postEvent("Exercise deleted")
         }
     }
@@ -545,7 +604,6 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteTemplate(id: Long) {
         viewModelScope.launch {
             templateDao.deleteTemplate(id)
-            if (_selectedTemplateId.value == id) clearTemplateFilter()
             postEvent("Template deleted")
         }
     }
@@ -674,7 +732,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 val s = BackupManager.importJson(db, text)
                 setInputs(emptyMap())
                 setSessionStart(null)
-                clearTemplateFilter()
+                setActiveWorkout(null)
                 postEvent("Restored ${s.exercises} exercises, ${s.templates} templates, ${s.sessions} sessions")
             } catch (e: Exception) {
                 postEvent("Restore failed: ${e.message}")
@@ -735,7 +793,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_UNIT = "weight_unit"
         private const val PREF_DRAFT = "draft_inputs"
         private const val PREF_HEAVY = "heavy_duty"
-        private const val PREF_TEMPLATE = "selected_template"
+        private const val PREF_ACTIVE = "active_workout"
+        private const val PREF_INTRO_DISMISSED = "intro_dismissed"
         private const val PREF_KEEP_ON = "keep_screen_on"
         private const val PREF_TIMER_MIN = "timer_minutes"
         private const val PREF_TRACK_FAILURE = "track_failure"
