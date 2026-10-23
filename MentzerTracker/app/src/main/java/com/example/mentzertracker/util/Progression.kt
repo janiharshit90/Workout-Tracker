@@ -53,7 +53,18 @@ fun suggestNext(
     }
 }
 
-/** One-line description for the Today card. */
+/** Short heading for the target block, by what the suggestion is asking of you. */
+fun Suggestion.label(): String = when (kind) {
+    SuggestionKind.INCREASE_WEIGHT -> "Target \u00b7 add weight"
+    SuggestionKind.ADD_REP -> "Target \u00b7 beat it"
+    SuggestionKind.BUILD_REPS -> "Target \u00b7 build reps"
+}
+
+/** "95 lbs × 9+" */
+fun Suggestion.target(unit: WeightUnit): String =
+    "${formatWeight(lbsToDisplay(weightLbs, unit))} ${unit.label} \u00d7 $targetReps+"
+
+/** One-line description (kept for compact spots). */
 fun Suggestion.describe(unit: WeightUnit): String {
     val w = "${formatWeight(lbsToDisplay(weightLbs, unit))} ${unit.label}"
     return when (kind) {
