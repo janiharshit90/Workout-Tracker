@@ -3,46 +3,54 @@
 package com.example.mentzertracker.ui
 
 import android.os.SystemClock
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.mentzertracker.ActiveWorkout
 import com.example.mentzertracker.PrInfo
 import com.example.mentzertracker.SetInput
 import com.example.mentzertracker.WorkoutViewModel
 import com.example.mentzertracker.data.Exercise
 import com.example.mentzertracker.data.SetWithExercise
+import com.example.mentzertracker.ui.theme.DisplayFont
+import com.example.mentzertracker.ui.theme.IronShape
 import com.example.mentzertracker.util.*
 import kotlinx.coroutines.delay
 
 /**
  * A workout in progress, one exercise at a time:
- *   header (name + clock) -> exercise chips -> the current exercise -> rest timer + Back/Next.
- * The last exercise's "Next" becomes "Review & finish".
+ *   header (name + clock) -> progress segments -> the current exercise -> rest timer + Back/Next.
+ * The last exercise's "Next" becomes "Review & finish". The tab bar is hidden meanwhile.
  */
 @Composable
 fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProgress: (Long) -> Unit) {
@@ -55,6 +63,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
     val suggestions by vm.suggestions.collectAsState()
     val trackFailure by vm.trackFailure.collectAsState()
     val recoveryDays by vm.recoveryDays.collectAsState()
+    val repRange by vm.repRange.collectAsState()
     val startedAt by vm.sessionStartedAt.collectAsState()
 
     val exercises = remember(workout, allExercises) {
@@ -117,7 +126,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
         val incomplete = exercises.sumOf { ex -> visibleSets(ex.id).count { !it.isEmpty && !it.isComplete } }
         AlertDialog(
             onDismissRequest = { showReview = false },
-            title = { Text("Finish workout?") },
+            title = { Text("FINISH WORKOUT?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     counts.forEach { (ex, n) ->
@@ -125,7 +134,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                             Text(ex.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 if (n > 0) "$n set${if (n == 1) "" else "s"}" else "skipped",
-                                color = if (n > 0) MaterialTheme.colorScheme.secondary
+                                color = if (n > 0) MaterialTheme.colorScheme.primary
                                         else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -145,10 +154,10 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
             },
             confirmButton = {
                 TextButton(onClick = { showReview = false; vm.logWorkout() }, enabled = totalSets > 0) {
-                    Text("Log workout")
+                    Text("LOG WORKOUT")
                 }
             },
-            dismissButton = { TextButton(onClick = { showReview = false }) { Text("Keep going") } }
+            dismissButton = { TextButton(onClick = { showReview = false }) { Text("KEEP GOING") } }
         )
     }
 
@@ -160,25 +169,30 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
             onClose = { showCancel = true }
         )
 
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            exercises.forEachIndexed { i, ex ->
-                FilterChip(
-                    selected = i == current,
-                    onClick = { page = i },
-                    label = { Text("${i + 1}. ${ex.name}", maxLines = 1) },
-                    leadingIcon = if (isDone(ex.id)) {
-                        { Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) }
-                    } else null
-                )
-            }
-            AssistChip(
-                onClick = { showPicker = true },
-                label = { Text("Add") },
-                leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(16.dp)) }
+        if (exercises.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            ProgressSegments(
+                count = exercises.size,
+                current = current,
+                isDone = { isDone(exercises[it].id) },
+                onSelect = { page = it }
             )
+            Row(
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "EXERCISE ${current + 1} OF ${exercises.size}",
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 2.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { showPicker = true }) {
+                    Icon(Icons.Filled.Add, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("ADD")
+                }
+            }
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -188,13 +202,13 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Text("No exercises yet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("NO EXERCISES YET", style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(4.dp))
                     Text("Add the first exercise for this workout.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = { showPicker = true }) {
-                        Icon(Icons.Filled.Add, null); Spacer(Modifier.width(8.dp)); Text("Add exercise")
+                    Button(onClick = { showPicker = true }, shape = IronShape) {
+                        Icon(Icons.Filled.Add, null); Spacer(Modifier.width(8.dp)); Text("ADD EXERCISE")
                     }
                 }
             } else {
@@ -210,6 +224,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                         suggestion = suggestions[ex.id],
                         trackFailure = trackFailure,
                         recoveryDays = recoveryDays,
+                        repRange = repRange,
                         onWeight = { idx, v -> vm.updateSet(ex.id, idx, weight = v) },
                         onReps = { idx, v -> vm.updateSet(ex.id, idx, reps = v) },
                         onToggleFailure = { idx -> vm.toggleFailure(ex.id, idx) },
@@ -225,20 +240,28 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
             }
         }
 
-        Surface(tonalElevation = 3.dp) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.background(MaterialTheme.colorScheme.background)) {
+            Divider(color = MaterialTheme.colorScheme.outlineVariant)
+            Column(
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 RestRow(vm)
                 if (exercises.isNotEmpty()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        GhostButton(
                             onClick = { page = current - 1 },
                             enabled = current > 0,
-                            modifier = Modifier.weight(1f).height(48.dp)
-                        ) { Text("Back") }
+                            modifier = Modifier.width(104.dp).height(56.dp)
+                        ) { Text("BACK", style = MaterialTheme.typography.titleMedium) }
                         Button(
                             onClick = { if (isLast) showReview = true else page = current + 1 },
-                            modifier = Modifier.weight(2f).height(48.dp)
-                        ) { Text(if (isLast) "Review & finish" else "Next exercise", fontWeight = FontWeight.Bold) }
+                            shape = IronShape,
+                            modifier = Modifier.weight(1f).height(56.dp)
+                        ) {
+                            Text(if (isLast) "REVIEW & FINISH" else "NEXT EXERCISE",
+                                style = MaterialTheme.typography.titleMedium)
+                        }
                     }
                 }
             }
@@ -247,28 +270,29 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
 }
 
 // ---------------------------------------------------------------------------------------------
-// Header + clock
+// Header, clock, progress
 // ---------------------------------------------------------------------------------------------
 
 @Composable
 private fun WorkoutHeader(name: String, startedAt: Long?, onFinish: () -> Unit, onClose: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp),
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+            Text(name.uppercase(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                letterSpacing = 3.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             WorkoutClock(startedAt)
         }
-        TextButton(onClick = onFinish) { Text("Finish") }
+        GhostButton(onClick = onFinish) { Text("FINISH", style = MaterialTheme.typography.titleSmall) }
         IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "Discard workout") }
     }
 }
 
 /**
- * Elapsed time. Heavy Duty sessions are short and brutal, so it turns red past the target as a
- * nudge to wrap up - informational only, never blocks anything.
+ * Big elapsed time with a thin bar toward the target. Heavy Duty sessions are short and brutal,
+ * so past the target everything turns red as a nudge to wrap up - informational only.
  */
 @Composable
 private fun WorkoutClock(startedAt: Long?) {
@@ -284,19 +308,53 @@ private fun WorkoutClock(startedAt: Long?) {
     val elapsedMs = startedAt?.let { now - it }
     if (elapsedMs == null || elapsedMs > WorkoutViewModel.SESSION_STALE_MS) {
         // Resumed long after starting: don't show a misleading multi-hour clock.
-        Text("In progress", style = MaterialTheme.typography.labelMedium, color = muted)
+        Text("IN PROGRESS", style = MaterialTheme.typography.titleMedium, color = muted)
         return
     }
-    val over = elapsedMs / 60_000L >= WorkoutViewModel.SESSION_TARGET_MIN
-    val tint = if (over) MaterialTheme.colorScheme.error else muted
+    val targetMs = WorkoutViewModel.SESSION_TARGET_MIN * 60_000L
+    val over = elapsedMs >= targetMs
+    val tint = if (over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.Schedule, null, Modifier.size(14.dp), tint = tint)
-        Spacer(Modifier.width(4.dp))
-        Text(
-            formatClock(elapsedMs / 1000) +
-                if (over) " · past ${WorkoutViewModel.SESSION_TARGET_MIN} min — wrap it up" else "",
-            style = MaterialTheme.typography.labelMedium, color = tint
+        Icon(Icons.Filled.Schedule, null, Modifier.size(22.dp), tint = tint)
+        Spacer(Modifier.width(6.dp))
+        Text(formatClock(elapsedMs / 1000), style = MaterialTheme.typography.headlineMedium, color = tint)
+    }
+    Spacer(Modifier.height(4.dp))
+    Box(Modifier.width(160.dp).height(3.dp).background(MaterialTheme.colorScheme.outlineVariant)) {
+        Box(
+            Modifier.fillMaxWidth((elapsedMs.toFloat() / targetMs).coerceIn(0f, 1f))
+                .height(3.dp).background(tint)
         )
+    }
+    if (over) {
+        Text("PAST ${WorkoutViewModel.SESSION_TARGET_MIN} MIN — WRAP IT UP",
+            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp, color = tint, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+/** One bar per exercise: lime = done, white = here, grey = still to do. Tap to jump. */
+@Composable
+private fun ProgressSegments(count: Int, current: Int, isDone: (Int) -> Boolean, onSelect: (Int) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        repeat(count) { i ->
+            Box(
+                Modifier.weight(1f).height(24.dp)
+                    .clickable(onClickLabel = "Go to exercise ${i + 1}", role = Role.Button) { onSelect(i) },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.fillMaxWidth().height(6.dp).background(
+                        when {
+                            i == current -> scheme.onSurface
+                            isDone(i) -> scheme.primary
+                            else -> scheme.outlineVariant
+                        }
+                    )
+                )
+            }
+        }
     }
 }
 
@@ -315,6 +373,7 @@ private fun ExercisePage(
     suggestion: Suggestion?,
     trackFailure: Boolean,
     recoveryDays: Int,
+    repRange: IntRange,
     onWeight: (Int, String) -> Unit,
     onReps: (Int, String) -> Unit,
     onToggleFailure: (Int) -> Unit,
@@ -326,167 +385,290 @@ private fun ExercisePage(
     onOpenProgress: () -> Unit,
     onRemove: () -> Unit
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val step = weightIncrement(unit)
+
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(exercise.name, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.Top) {
+            Text(
+                exercise.name.uppercase(),
+                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 52.sp, lineHeight = 50.sp),
+                modifier = Modifier.weight(1f)
+            )
             IconButton(onClick = onOpenProgress) {
-                Icon(Icons.Filled.ShowChart, "Progress for ${exercise.name}",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Filled.ShowChart, "Progress for ${exercise.name}", tint = scheme.onSurfaceVariant)
             }
         }
         if (exercise.cue.isNotBlank()) {
-            Text(exercise.cue, style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(exercise.cue, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
         }
 
-        // What to beat. The suggestion is the hero; everything else is quiet supporting text.
+        // What to beat. The target is the hero; everything else is quiet supporting text.
         val daysSince = last?.firstOrNull()?.sessionDate?.let { daysAgo(it) }
         val recoveringDaysLeft = daysSince?.let { (recoveryDays - it).coerceAtLeast(0) } ?: 0
-        if (suggestion != null || last != null || pr != null) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (suggestion != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.TrendingUp, null, tint = MaterialTheme.colorScheme.secondary)
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("Target", style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(suggestion.describe(unit), style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
-                            }
-                            FilledTonalButton(onClick = onApplySuggestion) { Text("Use weight") }
-                        }
+        Column(
+            Modifier.fillMaxWidth().clip(IronShape).background(scheme.surface)
+                .border(1.dp, scheme.outlineVariant, IronShape).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (suggestion != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(suggestion.label().uppercase(), style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = scheme.onSurfaceVariant)
+                        Text(suggestion.target(unit),
+                            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 46.sp, lineHeight = 48.sp),
+                            color = scheme.primary)
                     }
-                    if (last != null) {
-                        Text(
-                            "Last time (${relativeDay(last.first().sessionDate)}): " +
-                                last.joinToString(", ") { "${formatWeight(lbsToDisplay(it.weight, unit))}×${it.reps}" },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    OutlinedButton(
+                        onClick = onApplySuggestion, shape = IronShape,
+                        border = BorderStroke(1.dp, scheme.primary),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text("USE\nWEIGHT", textAlign = TextAlign.Center, style = MaterialTheme.typography.titleSmall,
+                            color = scheme.primary)
                     }
-                    if (pr != null) {
-                        Text(
-                            "PR: ${formatWeight(lbsToDisplay(pr.weight, unit))} ${unit.label} × ${pr.reps}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // Only worth a line when it matters: training before you've recovered.
-                    if (recoveringDaysLeft > 0) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.HourglassEmpty, null, Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                "Still recovering · $recoveringDaysLeft day${if (recoveringDaysLeft == 1) "" else "s"} left",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
+                }
+            } else if (last == null) {
+                Text("FIRST TIME", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 2.sp, color = scheme.onSurfaceVariant)
+                Text("Find a weight you can take to failure in ${repRange.first}–${repRange.last} reps.",
+                    style = MaterialTheme.typography.titleMedium, color = scheme.primary)
+            }
+            if (last != null) {
+                Text(
+                    "Last (${relativeDay(last.first().sessionDate)}): " +
+                        last.joinToString(", ") { "${formatWeight(lbsToDisplay(it.weight, unit))}×${it.reps}" } +
+                        (pr?.let { "  ·  PR ${formatWeight(lbsToDisplay(it.weight, unit))}×${it.reps}" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant
+                )
+            }
+            // Only worth a line when it matters: training before you've recovered.
+            if (recoveringDaysLeft > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.HourglassEmpty, null, Modifier.size(14.dp), tint = scheme.error)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "STILL RECOVERING · $recoveringDaysLeft DAY${if (recoveringDaysLeft == 1) "" else "S"} LEFT",
+                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.8.sp, color = scheme.error
+                    )
                 }
             }
         }
 
         // The sets: the thing you actually came here to fill in.
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                Row(Modifier.fillMaxWidth()) {
-                    Text("Set", Modifier.width(32.dp), style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Weight (${unit.label})", Modifier.weight(1.1f), style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Reps", Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (trackFailure) {
-                        Text("Failure", Modifier.width(48.dp), textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+        Text(
+            if (heavy) "YOUR SET · ONE TO FAILURE" else "YOUR SETS",
+            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+            letterSpacing = 2.sp, color = scheme.onSurfaceVariant
+        )
 
-                sets.forEachIndexed { idx, s ->
-                    val lastSet = last?.getOrNull(idx)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("${idx + 1}", Modifier.width(32.dp), fontWeight = FontWeight.SemiBold)
-                        OutlinedTextField(
-                            value = s.weight,
-                            onValueChange = { onWeight(idx, it) },
-                            modifier = Modifier.weight(1.1f),
-                            singleLine = true,
-                            placeholder = { Text(lastSet?.let { formatWeight(lbsToDisplay(it.weight, unit)) } ?: unit.label) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(
-                            value = s.reps,
-                            onValueChange = { onReps(idx, it) },
-                            modifier = Modifier.weight(0.9f),
-                            singleLine = true,
-                            placeholder = { Text(lastSet?.reps?.toString() ?: "reps") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
-                        )
-                        if (trackFailure) {
-                            IconButton(onClick = { onToggleFailure(idx) }, modifier = Modifier.size(48.dp)) {
-                                Icon(
-                                    Icons.Filled.LocalFireDepartment,
-                                    contentDescription = if (s.toFailure) "Marked to failure" else "Mark set as to failure",
-                                    tint = if (s.toFailure) MaterialTheme.colorScheme.error
-                                           else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            }
-                        }
-                    }
-                    if (trackFailure && s.toFailure) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(start = 32.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Forced reps (with a spot)", Modifier.weight(1f),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            IconButton(onClick = { onForcedReps(idx, -1) }, modifier = Modifier.size(36.dp)) {
-                                Icon(Icons.Filled.Remove, "Fewer forced reps", Modifier.size(18.dp))
-                            }
-                            Text("${s.forcedReps}", style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.padding(horizontal = 6.dp))
-                            IconButton(onClick = { onForcedReps(idx, 1) }, modifier = Modifier.size(36.dp)) {
-                                Icon(Icons.Filled.Add, "More forced reps", Modifier.size(18.dp))
-                            }
-                        }
-                    }
-                }
+        sets.forEachIndexed { idx, s ->
+            val lastSet = last?.getOrNull(idx)
+            val weightFallback = suggestion?.let { lbsToDisplay(it.weightLbs, unit) }
+                ?: lastSet?.let { lbsToDisplay(it.weight, unit) }
+            val repsFallback = suggestion?.targetReps ?: lastSet?.reps
+            SetBlock(
+                index = idx,
+                showIndex = !heavy,
+                set = s,
+                big = heavy,
+                unit = unit,
+                step = step,
+                weightHint = lastSet?.let { formatWeight(lbsToDisplay(it.weight, unit)) } ?: unit.label,
+                repsHint = lastSet?.reps?.toString() ?: "reps",
+                trackFailure = trackFailure,
+                onWeight = { onWeight(idx, it) },
+                onReps = { onReps(idx, it) },
+                onNudgeWeight = { delta -> onWeight(idx, nudgeWeight(s.weight, delta, weightFallback)) },
+                onNudgeReps = { delta -> onReps(idx, nudgeReps(s.reps, delta, repsFallback)) },
+                onToggleFailure = { onToggleFailure(idx) },
+                onForcedReps = { d -> onForcedReps(idx, d) }
+            )
+        }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!heavy) {
-                        TextButton(onClick = onAddSet, enabled = sets.size < WorkoutViewModel.MAX_SETS) {
-                            Icon(Icons.Filled.Add, null, Modifier.size(16.dp)); Spacer(Modifier.width(2.dp)); Text("Set")
-                        }
-                        TextButton(onClick = onRemoveSet, enabled = sets.size > 1) {
-                            Icon(Icons.Filled.Remove, null, Modifier.size(16.dp)); Spacer(Modifier.width(2.dp)); Text("Set")
-                        }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (last != null) TextButton(onClick = onCopyLast) { Text("Copy last time") }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!heavy) {
+                TextButton(onClick = onAddSet, enabled = sets.size < WorkoutViewModel.MAX_SETS) { Text("+ SET") }
+                TextButton(onClick = onRemoveSet, enabled = sets.size > 1) { Text("− SET") }
+            }
+            Spacer(Modifier.weight(1f))
+            if (last != null) TextButton(onClick = onCopyLast) { Text("COPY LAST TIME") }
+        }
+
+        TextButton(onClick = onRemove) {
+            Text("REMOVE FROM THIS WORKOUT", color = scheme.error)
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/**
+ * One set: big numeric fields with -/+ steppers under them (typing stays available), then the
+ * Heavy Duty bits - to-failure and forced reps. Single-set (Heavy Duty) is large; multi-set is compact.
+ */
+@Composable
+private fun SetBlock(
+    index: Int,
+    showIndex: Boolean,
+    set: SetInput,
+    big: Boolean,
+    unit: WeightUnit,
+    step: Float,
+    weightHint: String,
+    repsHint: String,
+    trackFailure: Boolean,
+    onWeight: (String) -> Unit,
+    onReps: (String) -> Unit,
+    onNudgeWeight: (Float) -> Unit,
+    onNudgeReps: (Int) -> Unit,
+    onToggleFailure: () -> Unit,
+    onForcedReps: (Int) -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val numberStyle = TextStyle(fontFamily = DisplayFont, fontWeight = FontWeight.Bold, fontSize = if (big) 40.sp else 28.sp)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (showIndex) {
+            Text("SET ${index + 1}", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                NumberField(set.weight, onWeight, "WEIGHT (${unit.label.uppercase()})", weightHint,
+                    KeyboardType.Decimal, numberStyle)
+                StepperRow("−${formatWeight(step)}", "+${formatWeight(step)}",
+                    { onNudgeWeight(-step) }, { onNudgeWeight(step) })
+            }
+            Column(Modifier.weight(1f)) {
+                NumberField(set.reps, onReps, "REPS", repsHint, KeyboardType.Number, numberStyle)
+                StepperRow("−1", "+1", { onNudgeReps(-1) }, { onNudgeReps(1) })
+            }
+            if (!big && trackFailure) {
+                IconButton(onClick = onToggleFailure, modifier = Modifier.padding(top = 4.dp).size(48.dp)) {
+                    Icon(
+                        Icons.Filled.LocalFireDepartment,
+                        contentDescription = if (set.toFailure) "Marked to failure" else "Mark set as to failure",
+                        tint = if (set.toFailure) scheme.error else scheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
                 }
             }
         }
 
-        TextButton(onClick = onRemove) {
-            Text("Remove from this workout", color = MaterialTheme.colorScheme.error)
+        if (big && trackFailure) {
+            if (set.toFailure) {
+                Button(
+                    onClick = onToggleFailure, shape = IronShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = scheme.error, contentColor = scheme.onError),
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                ) {
+                    Icon(Icons.Filled.LocalFireDepartment, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("TO FAILURE", style = MaterialTheme.typography.titleMedium, letterSpacing = 1.sp)
+                }
+            } else {
+                GhostButton(
+                    onClick = onToggleFailure,
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                ) {
+                    Icon(Icons.Filled.LocalFireDepartment, null, tint = scheme.onSurfaceVariant)
+                    Spacer(Modifier.width(8.dp))
+                    Text("MARK TO FAILURE", style = MaterialTheme.typography.titleMedium, letterSpacing = 1.sp)
+                }
+            }
         }
-        Spacer(Modifier.height(8.dp))
+
+        if (trackFailure && set.toFailure) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Forced reps (with a spot)", Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                SquareButton("−", "Fewer forced reps") { onForcedReps(-1) }
+                Text("${set.forcedReps}", style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(horizontal = 14.dp))
+                SquareButton("+", "More forced reps") { onForcedReps(1) }
+            }
+        }
     }
+}
+
+@Composable
+private fun NumberField(
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    placeholder: String,
+    keyboard: KeyboardType,
+    style: TextStyle
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        textStyle = style,
+        shape = IronShape,
+        label = { Text(label, letterSpacing = 1.sp) },
+        placeholder = { Text(placeholder, style = style) },
+        keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = ImeAction.Next)
+    )
+}
+
+@Composable
+private fun StepperRow(minus: String, plus: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        GhostButton(onClick = onMinus, contentPadding = PaddingValues(0.dp),
+            modifier = Modifier.weight(1f).height(44.dp)) { Text(minus, style = MaterialTheme.typography.titleMedium) }
+        GhostButton(onClick = onPlus, contentPadding = PaddingValues(0.dp),
+            modifier = Modifier.weight(1f).height(44.dp)) { Text(plus, style = MaterialTheme.typography.titleMedium) }
+    }
+}
+
+@Composable
+private fun SquareButton(symbol: String, description: String, onClick: () -> Unit) {
+    GhostButton(
+        onClick = onClick, contentPadding = PaddingValues(0.dp),
+        modifier = Modifier.size(44.dp).semantics { contentDescription = description }
+    ) { Text(symbol, style = MaterialTheme.typography.titleMedium) }
+}
+
+/** Outlined button with plain white text: lime is kept for the things that matter. */
+@Composable
+private fun GhostButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    content: @Composable RowScope.() -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick, modifier = modifier, enabled = enabled, shape = IronShape,
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+        contentPadding = contentPadding, content = content
+    )
+}
+
+/** Stepper maths. A blank field jumps to the sensible starting point rather than from zero. */
+private fun nudgeWeight(current: String, delta: Float, fallback: Float?): String {
+    val base = parseWeight(current)
+    val next = when {
+        base != null -> base + delta
+        fallback != null -> fallback
+        else -> delta
+    }
+    return formatWeight(next.coerceAtLeast(0f))
+}
+
+private fun nudgeReps(current: String, delta: Int, fallback: Int?): String {
+    val base = current.toIntOrNull()
+    val next = when {
+        base != null -> base + delta
+        fallback != null -> fallback
+        else -> delta
+    }.coerceIn(0, 999)
+    return if (next == 0) "" else next.toString()
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -513,14 +695,14 @@ private fun RestRow(vm: WorkoutViewModel) {
 
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(Icons.Filled.Timer, null, tint = tint)
-        Text("Rest  %d:%02d".format(remainingSec / 60, remainingSec % 60),
-            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = tint,
+        Text("REST  %d:%02d".format(remainingSec / 60, remainingSec % 60),
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = 26.sp), color = tint,
             modifier = Modifier.weight(1f))
         if (running) {
-            TextButton(onClick = { vm.addTimerSeconds(30) }) { Text("+30s") }
-            OutlinedButton(onClick = { vm.stopTimer() }) { Text("Stop") }
+            TextButton(onClick = { vm.addTimerSeconds(30) }) { Text("+30S") }
+            GhostButton(onClick = { vm.stopTimer() }) { Text("STOP") }
         } else {
-            FilledTonalButton(onClick = { vm.startTimer() }) { Text("Start rest") }
+            GhostButton(onClick = { vm.startTimer() }) { Text("START") }
         }
     }
 }
@@ -538,7 +720,7 @@ private fun PickExerciseDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add exercise") },
+        title = { Text("ADD EXERCISE") },
         text = {
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                 if (available.isEmpty()) {
@@ -552,7 +734,7 @@ private fun PickExerciseDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onNew) { Text("New exercise…") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(onClick = onNew) { Text("NEW EXERCISE…") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("CLOSE") } }
     )
 }

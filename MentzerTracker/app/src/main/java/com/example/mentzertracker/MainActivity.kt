@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -13,8 +14,11 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -80,24 +84,38 @@ fun AppRoot(vm: WorkoutViewModel, updateVm: UpdateViewModel) {
 
     val openProgress: (Long) -> Unit = { id -> nav.navigate("progress/$id") }
 
+    // A workout in progress is a focus mode: the tab bar steps out of the way.
+    val activeWorkout by vm.activeWorkout.collectAsState()
+    val inWorkout = current == "today" && activeWorkout != null
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (current == null || current in MAIN_ROUTES) {
-                NavigationBar {
-                    TABS.forEach { t ->
-                        NavigationBarItem(
-                            selected = current == t.route,
-                            onClick = {
-                                nav.navigate(t.route) {
-                                    popUpTo(nav.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(t.icon, null) },
-                            label = { Text(t.label) }
-                        )
+            if ((current == null || current in MAIN_ROUTES) && !inWorkout) {
+                Column {
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
+                        TABS.forEach { t ->
+                            NavigationBarItem(
+                                selected = current == t.route,
+                                onClick = {
+                                    nav.navigate(t.route) {
+                                        popUpTo(nav.graph.startDestinationId) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                icon = { Icon(t.icon, null) },
+                                label = { Text(t.label.uppercase(), fontSize = 11.sp, letterSpacing = 0.8.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    indicatorColor = Color.Transparent,
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            )
+                        }
                     }
                 }
             }
