@@ -706,35 +706,3 @@ private fun RestRow(vm: WorkoutViewModel) {
         }
     }
 }
-
-// ---------------------------------------------------------------------------------------------
-// Picker for adding an exercise mid-workout
-// ---------------------------------------------------------------------------------------------
-
-@Composable
-private fun PickExerciseDialog(
-    available: List<Exercise>,
-    onPick: (Exercise) -> Unit,
-    onNew: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("ADD EXERCISE") },
-        text = {
-            Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                if (available.isEmpty()) {
-                    Text("Every exercise is already in this workout.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                available.forEach { ex ->
-                    TextButton(onClick = { onPick(ex) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(ex.name, Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onNew) { Text("NEW EXERCISE…") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("CLOSE") } }
-    )
-}

@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -227,5 +228,34 @@ fun ConfirmDialog(
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Pick an exercise to add to a workout (preview or in progress), or create a new one. */
+@Composable
+fun PickExerciseDialog(
+    available: List<Exercise>,
+    onPick: (Exercise) -> Unit,
+    onNew: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("ADD EXERCISE") },
+        text = {
+            Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                if (available.isEmpty()) {
+                    Text("Every exercise is already in this workout.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                available.forEach { ex ->
+                    TextButton(onClick = { onPick(ex) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(ex.name, Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onNew) { Text("NEW EXERCISE…") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("CLOSE") } }
     )
 }

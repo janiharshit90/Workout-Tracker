@@ -55,7 +55,6 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
     val allExercises by vm.exercises.collectAsState()
     val lastSessions by vm.lastSessions.collectAsState()
     val history by vm.history.collectAsState()
-    val heavy by vm.heavyDutyMode.collectAsState()
     val recoveryDays by vm.recoveryDays.collectAsState()
     val introDismissed by vm.introDismissed.collectAsState()
 
@@ -114,14 +113,6 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
         }
 
         item {
-            StyleSwitch(
-                heavy = heavy,
-                onHeavy = { if (!heavy) vm.toggleHeavyDuty() },
-                onSeveral = { if (heavy) vm.toggleHeavyDuty() }
-            )
-        }
-
-        item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { SectionLabel("Choose a workout") }
                 TextButton(onClick = { showAddTemplate = true }) {
@@ -137,7 +128,7 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
                 letter = if (index < 26) ('A' + index).toString() else (index + 1).toString(),
                 info = info,
                 suggested = info.template.id == suggestedId,
-                onStart = { vm.startWorkout(info.template.id) }
+                onStart = { vm.openPreview(info.template.id) }
             )
         }
 
@@ -147,7 +138,7 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .clip(IronShape)
-                    .clickable { vm.startWorkout(null) }
+                    .clickable { vm.openPreview(null) }
                     .drawBehind {
                         drawRoundRect(
                             color = line,
@@ -167,38 +158,6 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
                 }
             }
         }
-    }
-}
-
-/** Two big segments instead of chips: this is the one setting that shapes the whole workout. */
-@Composable
-private fun StyleSwitch(heavy: Boolean, onHeavy: () -> Unit, onSeveral: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .clip(IronShape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, IronShape)
-    ) {
-        StyleSegment("One set · Heavy Duty", selected = heavy, onClick = onHeavy, modifier = Modifier.weight(1f))
-        StyleSegment("Several sets", selected = !heavy, onClick = onSeveral, modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun StyleSegment(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
-    Box(
-        modifier
-            .fillMaxHeight()
-            .background(if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent)
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label.uppercase(),
-            style = MaterialTheme.typography.titleSmall,
-            color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -291,7 +250,7 @@ private fun IntroCard(onDismiss: () -> Unit, onPrinciples: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text("HEAVY DUTY IN 3 STEPS", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-        Text("1.  Pick a workout below.")
+        Text("1.  Pick a workout, check it over, then tap Start.")
         Text("2.  For each exercise, warm up, then take ONE set to true failure.")
         Text("3.  Rest until fully recovered (5+ days) before repeating it.")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
