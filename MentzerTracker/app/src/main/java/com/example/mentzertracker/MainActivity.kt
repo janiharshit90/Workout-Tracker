@@ -84,9 +84,10 @@ fun AppRoot(vm: WorkoutViewModel, updateVm: UpdateViewModel) {
 
     val openProgress: (Long) -> Unit = { id -> nav.navigate("progress/$id") }
 
-    // A workout in progress is a focus mode: the tab bar steps out of the way.
+    // A workout in progress (or being previewed) is a focus mode: the tab bar steps out of the way.
     val activeWorkout by vm.activeWorkout.collectAsState()
-    val inWorkout = current == "today" && activeWorkout != null
+    val previewing by vm.preview.collectAsState()
+    val inWorkout = current == "today" && (activeWorkout != null || previewing != null)
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },

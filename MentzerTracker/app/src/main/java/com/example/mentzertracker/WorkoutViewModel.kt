@@ -44,6 +44,12 @@ data class UiEvent(
 /** A workout in progress: its display name and the exercises in it, in order. */
 data class ActiveWorkout(val name: String, val exerciseIds: List<Long>)
 
+/**
+ * The overview shown before a workout starts: what's in it, still editable. Lives only in memory
+ * (survives rotation, not an app kill) - a workout becomes real, and persisted, when you tap Start.
+ */
+data class WorkoutPreview(val templateId: Long?, val name: String, val exerciseIds: List<Long>)
+
 /** A personal record derived from logged sets (weights in lbs). */
 data class PrInfo(val exerciseId: Long, val weight: Float, val reps: Int, val date: Long) {
     val e1rm: Float get() = estimated1RM(weight, reps)
@@ -106,6 +112,9 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val _activeWorkout = MutableStateFlow(loadActiveWorkout())
     val activeWorkout: StateFlow<ActiveWorkout?> = _activeWorkout
+
+    private val _preview = MutableStateFlow<WorkoutPreview?>(null)
+    val preview: StateFlow<WorkoutPreview?> = _preview
 
     private val _introDismissed = MutableStateFlow(prefs.getBoolean(PREF_INTRO_DISMISSED, false))
     val introDismissed: StateFlow<Boolean> = _introDismissed
@@ -199,27 +208,40 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     // Guided workout
     // ==================================================================
 
-    /** Starts a workout from a template, or an empty "custom" one when [templateId] is null. */
-    fun startWorkout(templateId: Long?) {
+    /** Opens the pre-start overview for a template (or an empty custom workout). Starts nothing. */
+    fun openPreview(templateId: Long?) {
         viewModelScope.launch {
-            val existing = exerciseDao.getAllOnce().map { it.id }.toSet()
-            val name: String
-            val ids: List<Long>
             if (templateId == null) {
-                name = "Custom workout"; ids = emptyList()
-            } else {
-                val t = templateDao.getAllTemplatesOnce().firstOrNull { it.id == templateId } ?: return@launch
-                name = t.name
-                ids = templateDao.getExerciseIdsForTemplate(templateId).filter { it in existing }
-                if (ids.isEmpty()) {
-                    postEvent("\"$name\" has no exercises. Edit it in Settings \u2192 Manage templates.")
-                    return@launch
-                }
+                _preview.value = WorkoutPreview(null, "Custom workout", emptyList())
+                return@launch
             }
-            setInputs(emptyMap())
-            setSessionStart(System.currentTimeMillis())
-            setActiveWorkout(ActiveWorkout(name, ids))
+            val existing = exerciseDao.getAllOnce().map { it.id }.toSet()
+            val t = templateDao.getAllTemplatesOnce().firstOrNull { it.id == templateId } ?: return@launch
+            _preview.value = WorkoutPreview(
+                t.id, t.name, templateDao.getExerciseIdsForTemplate(templateId).filter { it in existing }
+            )
         }
+    }
+
+    fun closePreview() { _preview.value = null }
+
+    fun previewAdd(exerciseId: Long) {
+        val p = _preview.value ?: return
+        if (exerciseId !in p.exerciseIds) _preview.value = p.copy(exerciseIds = p.exerciseIds + exerciseId)
+    }
+
+    fun previewRemove(exerciseId: Long) {
+        val p = _preview.value ?: return
+        _preview.value = p.copy(exerciseIds = p.exerciseIds - exerciseId)
+    }
+
+    /** Starts the previewed workout. This is the moment the clock starts. */
+    fun startWorkout() {
+        val p = _preview.value ?: return  // also makes a double-tap harmless
+        setInputs(emptyMap())
+        setSessionStart(System.currentTimeMillis())
+        setActiveWorkout(ActiveWorkout(p.name, p.exerciseIds))
+        _preview.value = null
     }
 
     fun addToWorkout(exerciseId: Long) {
@@ -554,6 +576,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             _activeWorkout.value?.let { w ->
                 if (id in w.exerciseIds) setActiveWorkout(w.copy(exerciseIds = w.exerciseIds - id))
             }
+            _preview.value?.let { p -> if (id in p.exerciseIds) _preview.value = p.copy(exerciseIds = p.exerciseIds - id) }
             postEvent("Exercise deleted")
         }
     }
@@ -604,6 +627,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteTemplate(id: Long) {
         viewModelScope.launch {
             templateDao.deleteTemplate(id)
+            if (_preview.value?.templateId == id) _preview.value = null
             postEvent("Template deleted")
         }
     }
@@ -733,6 +757,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 setInputs(emptyMap())
                 setSessionStart(null)
                 setActiveWorkout(null)
+                _preview.value = null
                 postEvent("Restored ${s.exercises} exercises, ${s.templates} templates, ${s.sessions} sessions")
             } catch (e: Exception) {
                 postEvent("Restore failed: ${e.message}")
