@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.example.mentzertracker.data.*
+import com.example.mentzertracker.timer.RestTimer
 import com.example.mentzertracker.util.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -187,10 +188,11 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     private val _timerMinutes = MutableStateFlow(prefs.getInt(PREF_TIMER_MIN, 3))
     val timerMinutes: StateFlow<Int> = _timerMinutes
 
-    /** SystemClock.elapsedRealtime() at which the timer ends, or null when idle. */
-    private val _timerEndAt = MutableStateFlow<Long?>(null)
-    val timerEndAt: StateFlow<Long?> = _timerEndAt
-    private var timerJob: Job? = null
+    /**
+     * Wall-clock time (System.currentTimeMillis) at which the rest ends, or null when idle.
+     * The timer itself lives in [RestTimer] so it keeps running (and alerts) with the app closed.
+     */
+    val timerEndAt: StateFlow<Long?> = RestTimer.endAt
 
     // ------------------------------------------------------------------
     // Events: a Channel (not SharedFlow) so messages aren't lost when no screen
@@ -205,6 +207,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        viewModelScope.launch { RestTimer.finished.collect { postEvent("Rest is over \u2014 next set!") } }
         viewModelScope.launch {
             if (exerciseDao.count() == 0) seedDefaults()
             prefs.edit().remove("selected_template").apply()  // old Today template filter, now unused
@@ -279,6 +282,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Throws away the workout in progress (the UI confirms first). */
     fun cancelWorkout() {
+        RestTimer.stop(ctx)
         setInputs(emptyMap())
         setNotes(emptyMap())
         setSessionStart(null)
@@ -557,6 +561,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                     skippedIncomplete = incomplete
                 )
 
+                RestTimer.stop(ctx)
                 setInputs(emptyMap())
                 setNotes(emptyMap())
                 setSessionStart(null)
@@ -781,29 +786,13 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putInt(PREF_TIMER_MIN, minutes).apply()
     }
 
-    fun startTimer() = scheduleTimerEnd(SystemClock.elapsedRealtime() + _timerMinutes.value * 60_000L)
+    /** [title] and [nextLine] are what the lock-screen notification shows. */
+    fun startTimer(title: String, nextLine: String) =
+        RestTimer.start(ctx, _timerMinutes.value * 60, title, nextLine)
 
-    fun addTimerSeconds(seconds: Int) {
-        val end = _timerEndAt.value ?: return
-        scheduleTimerEnd(end + seconds * 1000L)
-    }
+    fun addTimerSeconds(seconds: Int) = RestTimer.addSeconds(ctx, seconds)
 
-    fun stopTimer() {
-        timerJob?.cancel()
-        timerJob = null
-        _timerEndAt.value = null
-    }
-
-    private fun scheduleTimerEnd(endAt: Long) {
-        timerJob?.cancel()
-        _timerEndAt.value = endAt
-        timerJob = viewModelScope.launch {
-            delay((endAt - SystemClock.elapsedRealtime()).coerceAtLeast(0L))
-            _timerEndAt.value = null
-            alertRestOver(ctx)
-            postEvent("Rest is over \u2014 next set!")
-        }
-    }
+    fun stopTimer() = RestTimer.stop(ctx)
 
     // ==================================================================
     // Export / backup / restore
