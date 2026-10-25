@@ -2,7 +2,11 @@
 
 package com.example.mentzertracker.ui
 
-import android.os.SystemClock
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +29,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -262,7 +268,19 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                 Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                RestRow(vm)
+                val here = exercises.getOrNull(current)
+                val upNext = exercises.getOrNull(current + 1)
+                RestRow(
+                    vm,
+                    title = "Rest \u00b7 ${here?.name ?: workout.name}",
+                    nextLine = when {
+                        !heavy && here != null ->
+                            suggestions[here.id]?.let { "Next set: ${it.target(unit)}" } ?: "Next set of ${here.name}"
+                        upNext != null ->
+                            "Up next: ${upNext.name}" + (suggestions[upNext.id]?.let { " \u00b7 ${it.target(unit)}" } ?: "")
+                        else -> "Last exercise \u2014 finish strong"
+                    }
+                )
                 if (exercises.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         GhostButton(
@@ -727,15 +745,25 @@ private fun nudgeReps(current: String, delta: Int, fallback: Int?): String {
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-private fun RestRow(vm: WorkoutViewModel) {
+private fun RestRow(vm: WorkoutViewModel, title: String, nextLine: String) {
     val endAt by vm.timerEndAt.collectAsState()
     val minutes by vm.timerMinutes.collectAsState()
-    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    val ctx = LocalContext.current
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    // Android 13+ needs permission to show the lock-screen countdown / rest-over alert.
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    fun start() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        vm.startTimer(title, nextLine)
+    }
 
     LaunchedEffect(endAt) {
         if (endAt == null) return@LaunchedEffect
         while (true) {
-            now = SystemClock.elapsedRealtime()
+            now = System.currentTimeMillis()
             delay(250)
         }
     }
@@ -753,7 +781,7 @@ private fun RestRow(vm: WorkoutViewModel) {
             TextButton(onClick = { vm.addTimerSeconds(30) }) { Text("+30S") }
             GhostButton(onClick = { vm.stopTimer() }) { Text("STOP") }
         } else {
-            GhostButton(onClick = { vm.startTimer() }) { Text("START") }
+            GhostButton(onClick = { start() }) { Text("START") }
         }
     }
 }
