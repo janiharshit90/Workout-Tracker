@@ -30,6 +30,12 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v3
 
+      - name: Unit tests
+        working-directory: MentzerTracker
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest --no-daemon
+
       - name: Build debug APK
         working-directory: MentzerTracker
         run: |

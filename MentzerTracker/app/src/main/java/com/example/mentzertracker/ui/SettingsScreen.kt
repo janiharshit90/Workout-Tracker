@@ -9,7 +9,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.MenuBook
@@ -51,6 +54,7 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
 
     var confirmRestore by remember { mutableStateOf(false) }
+    var crashLog by remember { mutableStateOf(CrashLog.read(ctx)) }
 
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -213,6 +217,28 @@ fun SettingsScreen(
                     color = if (updateVm.isConfigured) MaterialTheme.colorScheme.onSurfaceVariant
                             else MaterialTheme.colorScheme.error
                 )
+            }
+        }
+
+        item {
+            SettingsSection("Feedback") {
+                SettingsRow(Icons.Filled.Feedback, "Send feedback",
+                    "Share a note with the app version attached") {
+                    shareText(
+                        ctx, "Mentzer Tracker feedback",
+                        "What happened / what would help:\n\n\n\u2014\n" + CrashLog.header(),
+                        "Send feedback"
+                    )
+                }
+                if (crashLog != null) {
+                    SettingsRow(Icons.Filled.BugReport, "Share crash log",
+                        "The app closed unexpectedly last time \u2014 send the details") {
+                        shareText(ctx, "Mentzer Tracker crash log", crashLog!!, "Share crash log")
+                    }
+                    SettingsRow(Icons.Filled.Delete, "Clear crash log", null) {
+                        CrashLog.clear(ctx); crashLog = null
+                    }
+                }
             }
         }
 

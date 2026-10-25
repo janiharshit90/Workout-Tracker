@@ -49,6 +49,7 @@ fun WorkoutPreviewScreen(vm: WorkoutViewModel, preview: WorkoutPreview) {
     val suggestions by vm.suggestions.collectAsState()
     val recoveryDays by vm.recoveryDays.collectAsState()
     val repRange by vm.repRange.collectAsState()
+    val lastNotes by vm.lastNotes.collectAsState()
 
     BackHandler { vm.closePreview() }
 
@@ -169,6 +170,11 @@ fun WorkoutPreviewScreen(vm: WorkoutViewModel, preview: WorkoutPreview) {
                                 style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis
                             )
+                        }
+                        lastNotes[ex.id]?.let { n ->
+                            Text("Note: ${n.text}", style = MaterialTheme.typography.bodySmall,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                         if (recoveringLeft > 0) {
                             Row(verticalAlignment = Alignment.CenterVertically) {

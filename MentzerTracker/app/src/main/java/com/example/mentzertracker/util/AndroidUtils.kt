@@ -23,6 +23,16 @@ fun shareFile(ctx: Context, file: File, mime: String, chooserTitle: String) {
     ctx.startActivity(Intent.createChooser(send, chooserTitle))
 }
 
+/** Opens the share sheet with plain text (feedback, crash log...). */
+fun shareText(ctx: Context, subject: String, body: String, chooserTitle: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, subject)
+        putExtra(Intent.EXTRA_TEXT, body)
+    }
+    ctx.startActivity(Intent.createChooser(send, chooserTitle))
+}
+
 /** Buzz + notification chime when the rest timer finishes. Never throws. */
 fun alertRestOver(ctx: Context) {
     try {

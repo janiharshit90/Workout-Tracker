@@ -22,6 +22,9 @@ interface ExerciseDao {
     @Query("UPDATE exercises SET name = :name, cue = :cue WHERE id = :id")
     suspend fun update(id: Long, name: String, cue: String)
 
+    @Query("UPDATE exercises SET stepLbs = :stepLbs WHERE id = :id")
+    suspend fun updateStep(id: Long, stepLbs: Float)
+
     @Query("UPDATE exercises SET sortOrder = :sortOrder WHERE id = :id")
     suspend fun updateSortOrder(id: Long, sortOrder: Int)
 
@@ -38,7 +41,7 @@ interface WorkoutDao {
     @Query("""
         SELECT s.id, s.exerciseId, e.name AS exerciseName, s.sessionDate,
                s.setNumber, s.weight, s.reps, s.notes, s.toFailure, s.forcedReps,
-               s.durationSec
+               s.durationSec, s.isWarmup
         FROM workout_sets s JOIN exercises e ON s.exerciseId = e.id
         ORDER BY s.sessionDate DESC, e.sortOrder ASC, s.setNumber ASC
     """)
@@ -47,7 +50,7 @@ interface WorkoutDao {
     @Query("""
         SELECT s.id, s.exerciseId, e.name AS exerciseName, s.sessionDate,
                s.setNumber, s.weight, s.reps, s.notes, s.toFailure, s.forcedReps,
-               s.durationSec
+               s.durationSec, s.isWarmup
         FROM workout_sets s JOIN exercises e ON s.exerciseId = e.id
         ORDER BY s.sessionDate ASC, e.sortOrder ASC, s.setNumber ASC
     """)
@@ -59,8 +62,8 @@ interface WorkoutDao {
     @Query("SELECT * FROM workout_sets WHERE sessionDate = :sessionDate")
     suspend fun getSetsForSession(sessionDate: Long): List<WorkoutSet>
 
-    /** Heaviest set ever for an exercise; ties broken by more reps. */
-    @Query("SELECT * FROM workout_sets WHERE exerciseId = :exerciseId ORDER BY weight DESC, reps DESC LIMIT 1")
+    /** Heaviest WORKING set ever for an exercise (warm-ups excluded); ties broken by more reps. */
+    @Query("SELECT * FROM workout_sets WHERE exerciseId = :exerciseId AND isWarmup = 0 ORDER BY weight DESC, reps DESC LIMIT 1")
     suspend fun bestSetForExercise(exerciseId: Long): WorkoutSet?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

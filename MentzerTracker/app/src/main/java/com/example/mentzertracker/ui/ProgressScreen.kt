@@ -39,7 +39,7 @@ fun ProgressScreen(vm: WorkoutViewModel, exerciseId: Long, onBack: () -> Unit) {
     var metric by rememberSaveable { mutableStateOf(Metric.TOP) }
 
     val points = remember(history, exerciseId) {
-        history.filter { it.exerciseId == exerciseId }
+        history.filter { it.exerciseId == exerciseId && !it.isWarmup }
             .groupBy { it.sessionDate }
             .map { (date, sets) ->
                 val top = sets.maxWith(compareBy<SetWithExercise>({ it.weight }, { it.reps }))

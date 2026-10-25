@@ -27,7 +27,9 @@ data class SetInput(
     /** Heavy Duty logging: did this set go to true momentary muscular failure? */
     val toFailure: Boolean = false,
     /** Forced reps taken past failure with a spotter's help. Only meaningful when toFailure. */
-    val forcedReps: Int = 0
+    val forcedReps: Int = 0,
+    /** Warm-up sets are logged but excluded from PRs and from the progression target. */
+    val isWarmup: Boolean = false
 ) {
     val isEmpty: Boolean get() = weight.isBlank() && reps.isBlank()
     val isComplete: Boolean get() =
@@ -49,6 +51,9 @@ data class ActiveWorkout(val name: String, val exerciseIds: List<Long>)
  * (survives rotation, not an app kill) - a workout becomes real, and persisted, when you tap Start.
  */
 data class WorkoutPreview(val templateId: Long?, val name: String, val exerciseIds: List<Long>)
+
+/** The most recent note written for an exercise. */
+data class NoteInfo(val text: String, val date: Long)
 
 /** A personal record derived from logged sets (weights in lbs). */
 data class PrInfo(val exerciseId: Long, val weight: Float, val reps: Int, val date: Long) {
@@ -87,6 +92,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     val lastSessions: StateFlow<Map<Long, List<SetWithExercise>>> = history.map { computeLastSessions(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    /** exerciseId -> the latest non-blank note, shown as a reminder the next time you train it. */
+    val lastNotes: StateFlow<Map<Long, NoteInfo>> = history.map { computeLastNotes(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     val templates: StateFlow<List<WorkoutTemplate>> = templateDao.getAllTemplates()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -115,6 +124,14 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _preview = MutableStateFlow<WorkoutPreview?>(null)
     val preview: StateFlow<WorkoutPreview?> = _preview
+
+    /** Per-exercise notes for the workout in progress (persisted with the draft). */
+    private val _notes = MutableStateFlow(loadNotes())
+    val notes: StateFlow<Map<Long, String>> = _notes
+
+    /** Shown right after a workout is logged; in memory only (the data itself is in History). */
+    private val _summary = MutableStateFlow<WorkoutSummary?>(null)
+    val summary: StateFlow<WorkoutSummary?> = _summary
 
     private val _introDismissed = MutableStateFlow(prefs.getBoolean(PREF_INTRO_DISMISSED, false))
     val introDismissed: StateFlow<Boolean> = _introDismissed
@@ -145,8 +162,11 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
 
     /** exerciseId -> what to aim for next time, derived from the last session of each exercise. */
     val suggestions: StateFlow<Map<Long, Suggestion>> =
-        combine(lastSessions, _weightUnit, _repRange) { last, unit, range ->
-            last.mapNotNull { (id, sets) -> suggestNext(sets, unit, range)?.let { id to it } }.toMap()
+        combine(lastSessions, _weightUnit, _repRange, exercises) { last, unit, range, exs ->
+            val steps = exs.associate { it.id to it.stepLbs }
+            last.mapNotNull { (id, sets) ->
+                suggestNext(sets, unit, range, stepFor(steps[id] ?: 0f, unit))?.let { id to it }
+            }.toMap()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /**
@@ -239,6 +259,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     fun startWorkout() {
         val p = _preview.value ?: return  // also makes a double-tap harmless
         setInputs(emptyMap())
+        setNotes(emptyMap())
         setSessionStart(System.currentTimeMillis())
         setActiveWorkout(ActiveWorkout(p.name, p.exerciseIds))
         _preview.value = null
@@ -252,15 +273,19 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     fun removeFromWorkout(exerciseId: Long) {
         val w = _activeWorkout.value ?: return
         if (exerciseId in _inputs.value) setInputs(_inputs.value - exerciseId)
+        if (exerciseId in _notes.value) setNotes(_notes.value - exerciseId)
         setActiveWorkout(w.copy(exerciseIds = w.exerciseIds - exerciseId))
     }
 
     /** Throws away the workout in progress (the UI confirms first). */
     fun cancelWorkout() {
         setInputs(emptyMap())
+        setNotes(emptyMap())
         setSessionStart(null)
         setActiveWorkout(null)
     }
+
+    fun dismissSummary() { _summary.value = null }
 
     fun dismissIntro() {
         _introDismissed.value = true
@@ -344,10 +369,44 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val list = currentSets(exerciseId).toMutableList()
         if (setIndex !in list.indices) return
         val cur = list[setIndex]
-        list[setIndex] = cur.copy(toFailure = !cur.toFailure, forcedReps = if (cur.toFailure) 0 else cur.forcedReps)
+        // A set can't be both a warm-up and an all-out set.
+        list[setIndex] = cur.copy(
+            toFailure = !cur.toFailure, forcedReps = if (cur.toFailure) 0 else cur.forcedReps,
+            isWarmup = if (cur.toFailure) cur.isWarmup else false
+        )
         touchSession()
         setInputs(_inputs.value + (exerciseId to list.toList()))
     }
+
+    /** Tags/untags a set as a warm-up. Warm-ups never count as failure sets. */
+    fun toggleWarmup(exerciseId: Long, setIndex: Int) {
+        val list = currentSets(exerciseId).toMutableList()
+        if (setIndex !in list.indices) return
+        val cur = list[setIndex]
+        list[setIndex] = cur.copy(isWarmup = !cur.isWarmup, toFailure = false, forcedReps = 0)
+        touchSession()
+        setInputs(_inputs.value + (exerciseId to list.toList()))
+    }
+
+    fun setNote(exerciseId: Long, text: String) {
+        val clean = text.take(MAX_NOTE_LENGTH)
+        setNotes(if (clean.isEmpty()) _notes.value - exerciseId else _notes.value + (exerciseId to clean))
+    }
+
+    private fun setNotes(new: Map<Long, String>) {
+        _notes.value = new
+        val o = JSONObject()
+        new.forEach { (id, text) -> o.put(id.toString(), text) }
+        prefs.edit().putString(PREF_NOTES, o.toString()).apply()
+    }
+
+    private fun loadNotes(): Map<Long, String> = try {
+        val raw = prefs.getString(PREF_NOTES, null)
+        if (raw == null) emptyMap() else {
+            val o = JSONObject(raw)
+            buildMap { o.keys().forEach { k -> put(k.toLong(), o.getString(k)) } }
+        }
+    } catch (e: Exception) { emptyMap() }
 
     /** +/- stepper for forced reps; only meaningful once a set is marked to failure. */
     fun adjustForcedReps(exerciseId: Long, setIndex: Int, delta: Int) {
@@ -383,9 +442,11 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val old = _inputs.value
         if (old.values.all { sets -> sets.all { it.isEmpty } }) return
         val oldStart = _sessionStartedAt.value
+        val oldNotes = _notes.value
         setInputs(emptyMap())
+        setNotes(emptyMap())
         setSessionStart(null)
-        postEvent("Cleared all entries", "Undo") { setInputs(old); setSessionStart(oldStart) }
+        postEvent("Cleared all entries", "Undo") { setInputs(old); setNotes(oldNotes); setSessionStart(oldStart) }
     }
 
     // ==================================================================
@@ -441,7 +502,9 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                                     weight = displayToLbs(parseWeight(s.weight)!!, unit),
                                     reps = s.reps.toInt(),
                                     toFailure = s.toFailure, forcedReps = if (s.toFailure) s.forcedReps else 0,
-                                    durationSec = durationSec
+                                    durationSec = durationSec,
+                                    // One-set Heavy Duty has no warm-up rows, so ignore a stale flag.
+                                    isWarmup = !heavy && s.isWarmup
                                 )
                             }
                         }
@@ -453,27 +516,52 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
 
-                val touched = toInsert.map { it.exerciseId }.distinct()
-                val previousBest = touched.associateWith { workoutDao.bestSetForExercise(it) }
-                db.withTransaction { workoutDao.insertAll(toInsert) }
-
-                val newPrs = touched.mapNotNull { exId ->
-                    val prev = previousBest[exId] ?: return@mapNotNull null  // first time isn't a "PR"
-                    val best = toInsert.filter { it.exerciseId == exId }
-                        .maxWithOrNull(compareBy<WorkoutSet>({ it.weight }, { it.reps })) ?: return@mapNotNull null
-                    val beat = best.weight > prev.weight || (best.weight == prev.weight && best.reps > prev.reps)
-                    if (beat) exercisesById[exId]?.name else null
+                // Each exercise's note rides on its first working set (or first set if all warm-ups).
+                for (exId in toInsert.map { it.exerciseId }.distinct()) {
+                    val note = _notes.value[exId]?.trim().orEmpty()
+                    if (note.isEmpty()) continue
+                    val idx = toInsert.indexOfFirst { it.exerciseId == exId && !it.isWarmup }
+                        .takeIf { it >= 0 } ?: toInsert.indexOfFirst { it.exerciseId == exId }
+                    if (idx >= 0) toInsert[idx] = toInsert[idx].copy(notes = note)
                 }
 
+                val touched = toInsert.map { it.exerciseId }.distinct()
+                // Taken BEFORE inserting: what you were up against going in (working sets only).
+                val previousBest = touched.associateWith { workoutDao.bestSetForExercise(it) }
+                val previousTop = touched.associateWith { id ->
+                    lastSessions.value[id]?.map { TopSet(it.weight, it.reps) }?.best()
+                }
+                db.withTransaction { workoutDao.insertAll(toInsert) }
+
+                val order = _activeWorkout.value?.exerciseIds.orEmpty()
+                val summaryExercises = touched
+                    .sortedBy { id -> order.indexOf(id).let { if (it < 0) Int.MAX_VALUE else it } }
+                    .mapNotNull { exId ->
+                        val ex = exercisesById[exId] ?: return@mapNotNull null
+                        val mine = toInsert.filter { it.exerciseId == exId }
+                        val top = mine.filter { !it.isWarmup }.map { TopSet(it.weight, it.reps) }.best()
+                        ExerciseSummary(
+                            exerciseId = exId, name = ex.name,
+                            sets = mine.map { SummarySet(it.weight, it.reps, it.toFailure, it.forcedReps, it.isWarmup) },
+                            top = top,
+                            isPr = top != null && beatsBest(previousBest[exId]?.let { TopSet(it.weight, it.reps) }, top),
+                            change = top?.let { compareToLast(previousTop[exId], it) },
+                            note = mine.firstOrNull { it.notes.isNotBlank() }?.notes.orEmpty()
+                        )
+                    }
+
+                val summary = WorkoutSummary(
+                    name = _activeWorkout.value?.name ?: "Workout",
+                    durationSec = durationSec,
+                    exercises = summaryExercises,
+                    skippedIncomplete = incomplete
+                )
+
                 setInputs(emptyMap())
+                setNotes(emptyMap())
                 setSessionStart(null)
                 setActiveWorkout(null)
-                postEvent(buildString {
-                    append(if (heavy) "Heavy Duty session logged" else "Workout logged (${toInsert.size} sets)")
-                    if (durationSec > 0) append(" in ${formatDuration(durationSec)}")
-                    if (newPrs.isNotEmpty()) append(" \u00b7 New PR: ${newPrs.joinToString()}")
-                    if (incomplete > 0) append(" \u00b7 skipped $incomplete incomplete")
-                })
+                _summary.value = summary
             } finally {
                 logging = false
             }
@@ -507,7 +595,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun updateLoggedSet(setId: Long, weightText: String, repsText: String, toFailure: Boolean, forcedReps: Int) {
+    fun updateLoggedSet(
+        setId: Long, weightText: String, repsText: String,
+        toFailure: Boolean, forcedReps: Int, isWarmup: Boolean, notes: String
+    ) {
         viewModelScope.launch {
             val set = workoutDao.getSetById(setId) ?: return@launch
             val w = parseWeight(weightText)
@@ -515,8 +606,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             if (w == null || w < 0f || r == null || r <= 0) { postEvent("Enter a valid weight and reps"); return@launch }
             workoutDao.updateSet(set.copy(
                 weight = displayToLbs(w, _weightUnit.value), reps = r,
-                toFailure = toFailure,
-                forcedReps = if (toFailure) forcedReps.coerceIn(0, MAX_FORCED_REPS) else 0
+                toFailure = toFailure && !isWarmup,
+                forcedReps = if (toFailure && !isWarmup) forcedReps.coerceIn(0, MAX_FORCED_REPS) else 0,
+                isWarmup = isWarmup,
+                notes = notes.trim().take(MAX_NOTE_LENGTH)
             ))
             postEvent("Set updated")
         }
@@ -551,6 +644,14 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Sets an exercise's weight jump from a display-unit value; null/<=0 goes back to the default. */
+    fun setExerciseStep(id: Long, stepDisplay: Float?) {
+        viewModelScope.launch {
+            val lbs = if (stepDisplay == null || stepDisplay <= 0f) 0f else displayToLbs(stepDisplay, _weightUnit.value)
+            exerciseDao.updateStep(id, lbs)
+        }
+    }
+
     /** Moves an exercise up (-1) or down (+1) in the list. */
     fun moveExercise(id: Long, delta: Int) {
         viewModelScope.launch {
@@ -573,6 +674,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 exerciseDao.deleteById(id)
             }
             if (id in _inputs.value) setInputs(_inputs.value - id)
+            if (id in _notes.value) setNotes(_notes.value - id)
             _activeWorkout.value?.let { w ->
                 if (id in w.exerciseIds) setActiveWorkout(w.copy(exerciseIds = w.exerciseIds - id))
             }
@@ -716,13 +818,14 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
             val file = File(dir, "mentzer_history_${formatDate(System.currentTimeMillis(), "yyyyMMdd")}.csv")
             file.bufferedWriter().use { w ->
-                w.append("Date,Exercise,Set,Weight (${unit.label}),Reps,To failure,Forced reps,Est. 1RM (${unit.label}),Session (min),Notes\n")
+                w.append("Date,Exercise,Set,Weight (${unit.label}),Reps,To failure,Forced reps,Warm-up,Est. 1RM (${unit.label}),Session (min),Notes\n")
                 rows.forEach { r ->
                     val weight = lbsToDisplay(r.weight, unit)
                     w.append(listOf(
                         formatDate(r.sessionDate, "yyyy-MM-dd HH:mm"),
                         r.exerciseName, r.setNumber.toString(), formatWeight(weight), r.reps.toString(),
                         if (r.toFailure) "yes" else "no", r.forcedReps.toString(),
+                        if (r.isWarmup) "yes" else "no",
                         formatWeight(estimated1RM(weight, r.reps)),
                         if (r.durationSec > 0) (r.durationSec / 60).toString() else "", r.notes
                     ).joinToString(",") { csvEscape(it) }).append('\n')
@@ -755,6 +858,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 } ?: throw IOException("Couldn't read that file")
                 val s = BackupManager.importJson(db, text)
                 setInputs(emptyMap())
+                setNotes(emptyMap())
+                _summary.value = null
                 setSessionStart(null)
                 setActiveWorkout(null)
                 _preview.value = null
@@ -779,7 +884,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val o = JSONObject()
         map.forEach { (id, sets) ->
             o.put(id.toString(), JSONArray().apply {
-                sets.forEach { put(JSONArray().put(it.weight).put(it.reps).put(it.toFailure).put(it.forcedReps)) }
+                sets.forEach { put(JSONArray().put(it.weight).put(it.reps).put(it.toFailure).put(it.forcedReps).put(it.isWarmup)) }
             })
         }
         prefs.edit().putString(PREF_DRAFT, o.toString()).apply()
@@ -795,7 +900,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                     put(k.toLong(), List(arr.length()) { i ->
                         val p = arr.getJSONArray(i)
                         // optBoolean/optInt default gracefully for drafts saved before v4.
-                        SetInput(p.optString(0, ""), p.optString(1, ""), p.optBoolean(2, false), p.optInt(3, 0))
+                        SetInput(p.optString(0, ""), p.optString(1, ""), p.optBoolean(2, false), p.optInt(3, 0), p.optBoolean(4, false))
                     })
                 }
             }
@@ -806,6 +911,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         const val DEFAULT_SETS = 3
         const val MAX_SETS = 10
         const val MAX_FORCED_REPS = 20
+        const val MAX_NOTE_LENGTH = 300
         const val DEFAULT_RECOVERY_DAYS = 5
         const val DEFAULT_REP_MIN = 6
         const val DEFAULT_REP_MAX = 10
@@ -819,6 +925,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_DRAFT = "draft_inputs"
         private const val PREF_HEAVY = "heavy_duty"
         private const val PREF_ACTIVE = "active_workout"
+        private const val PREF_NOTES = "draft_notes"
         private const val PREF_INTRO_DISMISSED = "intro_dismissed"
         private const val PREF_KEEP_ON = "keep_screen_on"
         private const val PREF_TIMER_MIN = "timer_minutes"
@@ -828,17 +935,25 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_REP_MAX = "rep_max"
         private const val PREF_SESSION_START = "session_started_at"
 
+        /** Warm-ups never count toward PRs. */
         fun computePrs(sets: List<SetWithExercise>): Map<Long, PrInfo> =
-            sets.groupBy { it.exerciseId }.mapNotNull { (exId, list) ->
+            sets.filter { !it.isWarmup }.groupBy { it.exerciseId }.mapNotNull { (exId, list) ->
                 // Heaviest weight, then most reps, then the EARLIEST date it was achieved.
                 list.maxWithOrNull(compareBy<SetWithExercise>({ it.weight }, { it.reps }, { -it.sessionDate }))
                     ?.let { exId to PrInfo(exId, it.weight, it.reps, it.sessionDate) }
             }.toMap()
 
+        /** The latest session's WORKING sets per exercise (warm-ups excluded). */
         fun computeLastSessions(sets: List<SetWithExercise>): Map<Long, List<SetWithExercise>> =
-            sets.groupBy { it.exerciseId }.mapValues { (_, list) ->
+            sets.filter { !it.isWarmup }.groupBy { it.exerciseId }.mapValues { (_, list) ->
                 val latest = list.maxOf { it.sessionDate }
                 list.filter { it.sessionDate == latest }.sortedBy { it.setNumber }
+            }
+
+        /** [sets] may be in any order; the newest non-blank note per exercise wins. */
+        fun computeLastNotes(sets: List<SetWithExercise>): Map<Long, NoteInfo> =
+            sets.filter { it.notes.isNotBlank() }.groupBy { it.exerciseId }.mapValues { (_, list) ->
+                list.maxByOrNull { it.sessionDate }!!.let { NoteInfo(it.notes, it.sessionDate) }
             }
 
         private fun csvEscape(s: String): String =

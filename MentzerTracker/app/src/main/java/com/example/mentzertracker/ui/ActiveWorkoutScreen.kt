@@ -29,14 +29,17 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mentzertracker.ActiveWorkout
+import com.example.mentzertracker.NoteInfo
 import com.example.mentzertracker.PrInfo
 import com.example.mentzertracker.SetInput
 import com.example.mentzertracker.WorkoutViewModel
@@ -65,6 +68,8 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
     val recoveryDays by vm.recoveryDays.collectAsState()
     val repRange by vm.repRange.collectAsState()
     val startedAt by vm.sessionStartedAt.collectAsState()
+    val notes by vm.notes.collectAsState()
+    val lastNotes by vm.lastNotes.collectAsState()
 
     val exercises = remember(workout, allExercises) {
         val byId = allExercises.associateBy { it.id }
@@ -76,7 +81,8 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
         val sets = inputs[id] ?: List(WorkoutViewModel.DEFAULT_SETS) { SetInput() }
         return if (heavy) sets.take(1) else sets
     }
-    fun isDone(id: Long) = visibleSets(id).any { it.isComplete }
+    // "Done" means a real working set is in; a warm-up alone doesn't tick the exercise off.
+    fun isDone(id: Long) = visibleSets(id).any { it.isComplete && !it.isWarmup }
 
     // On resume, land on the first exercise you haven't finished.
     var page by rememberSaveable {
@@ -121,8 +127,9 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
     }
 
     if (showReview) {
-        val counts = exercises.map { ex -> ex to visibleSets(ex.id).count { it.isComplete } }
-        val totalSets = counts.sumOf { it.second }
+        val counts = exercises.map { ex -> ex to visibleSets(ex.id).count { it.isComplete && !it.isWarmup } }
+        val warmups = exercises.sumOf { ex -> visibleSets(ex.id).count { it.isComplete && it.isWarmup } }
+        val totalSets = counts.sumOf { it.second } + warmups
         val incomplete = exercises.sumOf { ex -> visibleSets(ex.id).count { !it.isEmpty && !it.isComplete } }
         AlertDialog(
             onDismissRequest = { showReview = false },
@@ -144,6 +151,11 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                             "$incomplete set${if (incomplete == 1) "" else "s"} missing weight or reps will be skipped.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
                         )
+                    }
+                    if (warmups > 0) {
+                        Text("$warmups warm-up set${if (warmups == 1) "" else "s"} logged (not counted toward PRs).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (totalSets == 0) {
                         Text("Nothing to log yet — enter weight and reps for at least one set.",
@@ -225,6 +237,10 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                         trackFailure = trackFailure,
                         recoveryDays = recoveryDays,
                         repRange = repRange,
+                        note = notes[ex.id].orEmpty(),
+                        lastNote = lastNotes[ex.id],
+                        onNote = { vm.setNote(ex.id, it) },
+                        onToggleWarmup = { idx -> vm.toggleWarmup(ex.id, idx) },
                         onWeight = { idx, v -> vm.updateSet(ex.id, idx, weight = v) },
                         onReps = { idx, v -> vm.updateSet(ex.id, idx, reps = v) },
                         onToggleFailure = { idx -> vm.toggleFailure(ex.id, idx) },
@@ -374,6 +390,10 @@ private fun ExercisePage(
     trackFailure: Boolean,
     recoveryDays: Int,
     repRange: IntRange,
+    note: String,
+    lastNote: NoteInfo?,
+    onNote: (String) -> Unit,
+    onToggleWarmup: (Int) -> Unit,
     onWeight: (Int, String) -> Unit,
     onReps: (Int, String) -> Unit,
     onToggleFailure: (Int) -> Unit,
@@ -386,7 +406,7 @@ private fun ExercisePage(
     onRemove: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
-    val step = weightIncrement(unit)
+    val step = stepFor(exercise.stepLbs, unit)
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
@@ -446,6 +466,14 @@ private fun ExercisePage(
                     style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant
                 )
             }
+            if (lastNote != null) {
+                Text(
+                    "NOTE \u00b7 ${relativeDay(lastNote.date).uppercase()}",
+                    style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.5.sp, color = scheme.onSurfaceVariant
+                )
+                Text(lastNote.text, style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic)
+            }
             // Only worth a line when it matters: training before you've recovered.
             if (recoveringDaysLeft > 0) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -487,6 +515,7 @@ private fun ExercisePage(
                 onNudgeWeight = { delta -> onWeight(idx, nudgeWeight(s.weight, delta, weightFallback)) },
                 onNudgeReps = { delta -> onReps(idx, nudgeReps(s.reps, delta, repsFallback)) },
                 onToggleFailure = { onToggleFailure(idx) },
+                onToggleWarmup = { onToggleWarmup(idx) },
                 onForcedReps = { d -> onForcedReps(idx, d) }
             )
         }
@@ -499,6 +528,15 @@ private fun ExercisePage(
             Spacer(Modifier.weight(1f))
             if (last != null) TextButton(onClick = onCopyLast) { Text("COPY LAST TIME") }
         }
+
+        OutlinedTextField(
+            value = note, onValueChange = onNote,
+            modifier = Modifier.fillMaxWidth(), shape = IronShape,
+            label = { Text("NOTE (OPTIONAL)", letterSpacing = 1.sp) },
+            placeholder = { Text("Form, tempo, how it felt\u2026") },
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            minLines = 1, maxLines = 4
+        )
 
         TextButton(onClick = onRemove) {
             Text("REMOVE FROM THIS WORKOUT", color = scheme.error)
@@ -527,6 +565,7 @@ private fun SetBlock(
     onNudgeWeight: (Float) -> Unit,
     onNudgeReps: (Int) -> Unit,
     onToggleFailure: () -> Unit,
+    onToggleWarmup: () -> Unit,
     onForcedReps: (Int) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -534,7 +573,19 @@ private fun SetBlock(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (showIndex) {
-            Text("SET ${index + 1}", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "SET ${index + 1}" + if (set.isWarmup) " \u00b7 WARM-UP" else "",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (set.isWarmup) scheme.primary else scheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                // Warm-ups only make sense when you're doing several sets.
+                FilterChip(
+                    selected = set.isWarmup, onClick = onToggleWarmup, shape = IronShape,
+                    label = { Text("WARM-UP", style = MaterialTheme.typography.labelMedium) }
+                )
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {

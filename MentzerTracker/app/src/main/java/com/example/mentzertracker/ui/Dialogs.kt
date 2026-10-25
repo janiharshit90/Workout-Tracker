@@ -19,7 +19,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.mentzertracker.WorkoutViewModel
 import com.example.mentzertracker.data.Exercise
+import com.example.mentzertracker.util.WeightUnit
+import com.example.mentzertracker.util.formatWeight
 import com.example.mentzertracker.util.parseWeight
+import com.example.mentzertracker.util.stepChoices
+import com.example.mentzertracker.util.weightIncrement
 import com.example.mentzertracker.util.sanitizeRepsInput
 import com.example.mentzertracker.util.sanitizeWeightInput
 
@@ -133,15 +137,19 @@ fun EditSetDialog(
     initialReps: String,
     initialToFailure: Boolean,
     initialForcedReps: Int,
+    initialWarmup: Boolean,
+    initialNotes: String,
     unitLabel: String,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
-    onConfirm: (weight: String, reps: String, toFailure: Boolean, forcedReps: Int) -> Unit
+    onConfirm: (weight: String, reps: String, toFailure: Boolean, forcedReps: Int, isWarmup: Boolean, notes: String) -> Unit
 ) {
     var weight by remember { mutableStateOf(initialWeight) }
     var reps by remember { mutableStateOf(initialReps) }
     var toFailure by remember { mutableStateOf(initialToFailure) }
     var forced by remember { mutableStateOf(initialForcedReps) }
+    var warmup by remember { mutableStateOf(initialWarmup) }
+    var notes by remember { mutableStateOf(initialNotes) }
     val valid = parseWeight(weight) != null && (reps.toIntOrNull() ?: 0) > 0
 
     AlertDialog(
@@ -165,7 +173,19 @@ fun EditSetDialog(
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(
-                    Modifier.fillMaxWidth().clickable { toFailure = !toFailure; if (!toFailure) forced = 0 },
+                    Modifier.fillMaxWidth().clickable { warmup = !warmup; if (warmup) { toFailure = false; forced = 0 } },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Warm-up set")
+                        Text("Not counted toward PRs or progression", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = warmup, onCheckedChange = { warmup = it; if (it) { toFailure = false; forced = 0 } })
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.fillMaxWidth().clickable { toFailure = !toFailure; if (!toFailure) forced = 0; if (toFailure) warmup = false },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -175,7 +195,7 @@ fun EditSetDialog(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Taken to failure", Modifier.weight(1f))
-                    Switch(checked = toFailure, onCheckedChange = { toFailure = it; if (!it) forced = 0 })
+                    Switch(checked = toFailure, onCheckedChange = { toFailure = it; if (!it) forced = 0; if (it) warmup = false })
                 }
                 if (toFailure) {
                     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -192,10 +212,17 @@ fun EditSetDialog(
                         ) { Icon(Icons.Filled.Add, "More forced reps", Modifier.size(18.dp)) }
                     }
                 }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = notes, onValueChange = { notes = it.take(WorkoutViewModel.MAX_NOTE_LENGTH) },
+                    label = { Text("Note (optional)") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    minLines = 1, maxLines = 4, modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(weight, reps, toFailure, if (toFailure) forced else 0) }, enabled = valid) {
+            TextButton(onClick = { onConfirm(weight, reps, toFailure, if (toFailure) forced else 0, warmup, notes) }, enabled = valid) {
                 Text("Save")
             }
         },
@@ -257,5 +284,49 @@ fun PickExerciseDialog(
         },
         confirmButton = { TextButton(onClick = onNew) { Text("NEW EXERCISE…") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("CLOSE") } }
+    )
+}
+
+
+/**
+ * Pick how much weight to add when this exercise progresses (and what the +/- buttons step by).
+ * Light isolation moves want small jumps; big compound lifts take bigger ones.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StepDialog(
+    exerciseName: String,
+    unit: WeightUnit,
+    currentStep: Float,
+    onDismiss: () -> Unit,
+    onPick: (Float?) -> Unit
+) {
+    val choices = stepChoices(unit)
+    val default = weightIncrement(unit)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Weight jump") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "How much to add to $exerciseName when you hit the top of your rep range. " +
+                        "It's also what the \u2212/+ buttons step by.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    choices.forEach { c ->
+                        FilterChip(
+                            selected = kotlin.math.abs(currentStep - c) < 0.001f,
+                            onClick = { onPick(if (c == default) null else c) },
+                            label = { Text("${formatWeight(c)} ${unit.label}") }
+                        )
+                    }
+                }
+                Text("Default: ${formatWeight(default)} ${unit.label}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
