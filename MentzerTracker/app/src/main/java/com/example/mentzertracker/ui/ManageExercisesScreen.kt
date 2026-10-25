@@ -17,16 +17,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.mentzertracker.WorkoutViewModel
 import com.example.mentzertracker.data.Exercise
+import com.example.mentzertracker.util.formatWeight
+import com.example.mentzertracker.util.stepFor
 
 @Composable
 fun ManageExercisesScreen(vm: WorkoutViewModel, onBack: () -> Unit) {
     val exercises by vm.exercises.collectAsState()
     val history by vm.history.collectAsState()
+    val unit by vm.weightUnit.collectAsState()
     val setCounts = remember(history) { history.groupingBy { it.exerciseId }.eachCount() }
 
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Exercise?>(null) }
     var deleting by remember { mutableStateOf<Exercise?>(null) }
+    var stepping by remember { mutableStateOf<Exercise?>(null) }
+
+    stepping?.let { ex ->
+        StepDialog(
+            exerciseName = ex.name, unit = unit, currentStep = stepFor(ex.stepLbs, unit),
+            onDismiss = { stepping = null },
+            onPick = { vm.setExerciseStep(ex.id, it); stepping = null }
+        )
+    }
 
     if (showAdd) {
         AddExerciseDialog(
@@ -89,6 +101,15 @@ fun ManageExercisesScreen(vm: WorkoutViewModel, onBack: () -> Unit) {
                         val n = setCounts[ex.id] ?: 0
                         Text("$n logged set${if (n == 1) "" else "s"}", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(
+                            onClick = { stepping = ex },
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+                            modifier = Modifier.heightIn(min = 32.dp)
+                        ) {
+                            Text("Weight jump: ${formatWeight(stepFor(ex.stepLbs, unit))} ${unit.label}" +
+                                    if (ex.stepLbs <= 0f) " (default)" else "",
+                                style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                     IconButton(onClick = { editing = ex }) { Icon(Icons.Filled.Edit, "Edit ${ex.name}") }
                     IconButton(onClick = { deleting = ex }) { Icon(Icons.Filled.Delete, "Delete ${ex.name}") }

@@ -1,7 +1,10 @@
-# Push a tag like v1.1.0  ->  builds a SIGNED release APK and publishes a GitHub
-# Release with it attached. The app's updater finds it automatically.
+# Push a tag like v1.1.0 (the leading "v" is optional)  ->  builds a SIGNED release APK and
+# publishes a GitHub Release with it attached. The app's updater finds it automatically.
 #
 #   git tag v1.1.0 && git push origin v1.1.0
+#
+# Or run it by hand: Actions -> Release -> Run workflow, and type the version (e.g. 1.7.0).
+# That path creates the tag for you, on the branch you pick.
 #
 # Required repo secrets (Settings -> Secrets and variables -> Actions):
 #   KEYSTORE_BASE64, STORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
@@ -9,7 +12,13 @@ name: Release
 
 on:
   push:
-    tags: [ 'v*' ]
+    tags: [ 'v*', '[0-9]*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.7.0 (a leading v is fine)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -24,6 +33,21 @@ jobs:
       KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Work out the version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then RAW="$INPUT_VERSION"; else RAW="$GITHUB_REF_NAME"; fi
+          VERSION="${RAW#v}"
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$RAW' is not a version like 1.7.0"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -59,16 +83,15 @@ jobs:
         working-directory: MentzerTracker
         run: |
           chmod +x ./gradlew
-          VERSION="${GITHUB_REF_NAME#v}"
-          ./gradlew assembleRelease --no-daemon -PappVersionName="$VERSION"
+          ./gradlew assembleRelease --no-daemon -PappVersionName="${{ steps.ver.outputs.version }}"
 
       - name: Copy APK to workspace root with versioned name
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          cp MentzerTracker/app/build/outputs/apk/release/app-release.apk "MentzerTracker-$VERSION.apk"
+          cp MentzerTracker/app/build/outputs/apk/release/app-release.apk "MentzerTracker-${{ steps.ver.outputs.version }}.apk"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && steps.ver.outputs.tag || github.ref_name }}
           files: MentzerTracker-*.apk
           generate_release_notes: true

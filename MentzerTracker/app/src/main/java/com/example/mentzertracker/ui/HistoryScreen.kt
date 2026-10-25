@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.mentzertracker.WorkoutViewModel
@@ -40,10 +41,12 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
             initialReps = s.reps.toString(),
             initialToFailure = s.toFailure,
             initialForcedReps = s.forcedReps,
+            initialWarmup = s.isWarmup,
+            initialNotes = s.notes,
             unitLabel = unit.label,
             onDismiss = { editing = null },
             onDelete = { vm.deleteSet(s.id); editing = null },
-            onConfirm = { w, r, f, fr -> vm.updateLoggedSet(s.id, w, r, f, fr); editing = null }
+            onConfirm = { w, r, f, fr, wu, n -> vm.updateLoggedSet(s.id, w, r, f, fr, wu, n); editing = null }
         )
     }
 
@@ -122,6 +125,11 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
                             Text(exSets.first().exerciseName, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                             Icon(Icons.Filled.ChevronRight, "Progress", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        exSets.firstOrNull { it.notes.isNotBlank() }?.let { n ->
+                            Text(n.notes, style = MaterialTheme.typography.bodySmall,
+                                fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp))
+                        }
                         exSets.sortedBy { it.setNumber }.forEach { s ->
                             Row(
                                 Modifier
@@ -130,7 +138,7 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
                                     .padding(horizontal = 14.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Set ${s.setNumber}", Modifier.width(56.dp),
+                                Text(if (s.isWarmup) "Warm-up" else "Set ${s.setNumber}", Modifier.width(64.dp),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("${formatWeight(lbsToDisplay(s.weight, unit))} ${unit.label} \u00d7 ${s.reps}",

@@ -31,7 +31,8 @@ object BackupManager {
             .put("exercises", JSONArray().apply {
                 exercises.forEach {
                     put(JSONObject().put("id", it.id).put("name", it.name)
-                        .put("cue", it.cue).put("sortOrder", it.sortOrder))
+                        .put("cue", it.cue).put("sortOrder", it.sortOrder)
+                        .put("stepLbs", it.stepLbs.toDouble()))
                 }
             })
             .put("templates", JSONArray().apply {
@@ -52,7 +53,7 @@ object BackupManager {
                         .put("weight", it.weight.toDouble()).put("reps", it.reps)
                         .put("notes", it.notes)
                         .put("toFailure", it.toFailure).put("forcedReps", it.forcedReps)
-                        .put("durationSec", it.durationSec))
+                        .put("durationSec", it.durationSec).put("isWarmup", it.isWarmup))
                 }
             })
             .toString(2)
@@ -69,7 +70,8 @@ object BackupManager {
         try {
             val exercises = root.getJSONArray("exercises").mapObjects { o, i ->
                 Exercise(id = o.getLong("id"), name = o.getString("name"),
-                    cue = o.optString("cue", ""), sortOrder = o.optInt("sortOrder", i))
+                    cue = o.optString("cue", ""), sortOrder = o.optInt("sortOrder", i),
+                    stepLbs = o.optDouble("stepLbs", 0.0).toFloat())
             }
             if (exercises.isEmpty()) throw BackupException("Backup contains no exercises.")
             val exIds = exercises.map { it.id }.toSet()
@@ -91,7 +93,7 @@ object BackupManager {
                     weight = o.getDouble("weight").toFloat(), reps = o.getInt("reps"),
                     notes = o.optString("notes", ""),
                     toFailure = o.optBoolean("toFailure", false), forcedReps = o.optInt("forcedReps", 0),
-                    durationSec = o.optInt("durationSec", 0))
+                    durationSec = o.optInt("durationSec", 0), isWarmup = o.optBoolean("isWarmup", false))
             }.filter { it.exerciseId in exIds }
 
             db.withTransaction {

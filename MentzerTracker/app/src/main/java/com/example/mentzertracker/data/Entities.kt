@@ -7,7 +7,10 @@ data class Exercise(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val cue: String,
-    val sortOrder: Int
+    val sortOrder: Int,
+    // Added in v6 (see MIGRATION_5_6). Weight jump for this exercise, in lbs (the storage unit);
+    // 0 = use the default (5 lb / 2.5 kg).
+    val stepLbs: Float = 0f
 )
 
 @Entity(tableName = "workout_templates")
@@ -53,7 +56,10 @@ data class WorkoutSet(
     val forcedReps: Int = 0,
     // Added in v5 (see MIGRATION_4_5). Whole-session length in seconds, stored on every set
     // of that session; 0 = unknown (older sessions, or the timer wasn't trustworthy).
-    val durationSec: Int = 0
+    val durationSec: Int = 0,
+    // Added in v6 (see MIGRATION_5_6). Warm-up sets are logged but never count toward PRs,
+    // "last time" or the progression target.
+    val isWarmup: Boolean = false
 )
 
 @Entity(tableName = "personal_records",
@@ -72,7 +78,8 @@ data class SetWithExercise(
     val sessionDate: Long, val setNumber: Int, val weight: Float,
     val reps: Int, val notes: String,
     val toFailure: Boolean = false, val forcedReps: Int = 0,
-    val durationSec: Int = 0
+    val durationSec: Int = 0,
+    val isWarmup: Boolean = false
 )
 
 data class PRWithExercise(
