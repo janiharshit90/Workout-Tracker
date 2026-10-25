@@ -51,7 +51,7 @@ data class VerifyProblem(val message: String, val signatureMismatch: Boolean = f
  */
 object UpdateManager {
 
-    private const val USER_AGENT = "MentzerTracker-Updater"
+    private const val USER_AGENT = "Ironset-Updater"
     private const val APK_MIME = "application/vnd.android.package-archive"
 
     val repo: String get() = BuildConfig.UPDATE_REPO
@@ -131,7 +131,7 @@ object UpdateManager {
             val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }
             val tmp = File(dir, "download.part")
-            val out = File(dir, "MentzerTracker-${release.versionName}.apk")
+            val out = File(dir, "Ironset-${release.versionName}.apk")
 
             val conn = (URL(release.apkUrl).openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = true  // GitHub redirects to its CDN

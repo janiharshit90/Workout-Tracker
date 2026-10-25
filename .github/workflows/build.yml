@@ -45,5 +45,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MentzerTracker-debug
+          name: Ironset-debug
           path: MentzerTracker/app/build/outputs/apk/debug/*.apk

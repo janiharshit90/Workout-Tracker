@@ -40,7 +40,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.mentzertracker"
+        applicationId = "com.ironset.app"
         minSdk = 24
         targetSdk = 34
         versionCode = appVersionCode

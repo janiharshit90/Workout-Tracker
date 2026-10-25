@@ -87,11 +87,11 @@ jobs:
 
       - name: Copy APK to workspace root with versioned name
         run: |
-          cp MentzerTracker/app/build/outputs/apk/release/app-release.apk "MentzerTracker-${{ steps.ver.outputs.version }}.apk"
+          cp MentzerTracker/app/build/outputs/apk/release/app-release.apk "Ironset-${{ steps.ver.outputs.version }}.apk"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && steps.ver.outputs.tag || github.ref_name }}
-          files: MentzerTracker-*.apk
+          files: Ironset-*.apk
           generate_release_notes: true

@@ -95,7 +95,7 @@ fun UpdateDialog(updateVm: UpdateViewModel) {
             onDismissRequest = updateVm::dismiss,
             title = { Text("One-time permission") },
             text = {
-                Text("Android needs you to allow Mentzer Tracker to install updates.\n\n" +
+                Text("Android needs you to allow Ironset to install updates.\n\n" +
                      "Tap \"Open settings\", switch on \"Allow from this source\", come back, then tap \"Install\".")
             },
             confirmButton = { TextButton(onClick = updateVm::retryInstall) { Text("Install") } },
