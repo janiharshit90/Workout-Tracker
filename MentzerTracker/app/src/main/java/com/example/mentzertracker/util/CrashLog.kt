@@ -22,7 +22,7 @@ object CrashLog {
                 val sw = StringWriter()
                 error.printStackTrace(PrintWriter(sw))
                 File(app.filesDir, FILE).writeText(
-                    "Mentzer Tracker crash\n" + header() + "\nThread: ${thread.name}\n\n" + sw.toString().take(20_000)
+                    "Ironset crash\n" + header() + "\nThread: ${thread.name}\n\n" + sw.toString().take(20_000)
                 )
             } catch (_: Throwable) { /* never make a crash worse */ }
             previous?.uncaughtException(thread, error)

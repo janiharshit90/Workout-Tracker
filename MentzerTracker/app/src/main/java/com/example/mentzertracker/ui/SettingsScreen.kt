@@ -225,7 +225,7 @@ fun SettingsScreen(
                 SettingsRow(Icons.Filled.Feedback, "Send feedback",
                     "Share a note with the app version attached") {
                     shareText(
-                        ctx, "Mentzer Tracker feedback",
+                        ctx, "Ironset feedback",
                         "What happened / what would help:\n\n\n\u2014\n" + CrashLog.header(),
                         "Send feedback"
                     )
@@ -233,7 +233,7 @@ fun SettingsScreen(
                 if (crashLog != null) {
                     SettingsRow(Icons.Filled.BugReport, "Share crash log",
                         "The app closed unexpectedly last time \u2014 send the details") {
-                        shareText(ctx, "Mentzer Tracker crash log", crashLog!!, "Share crash log")
+                        shareText(ctx, "Ironset crash log", crashLog!!, "Share crash log")
                     }
                     SettingsRow(Icons.Filled.Delete, "Clear crash log", null) {
                         CrashLog.clear(ctx); crashLog = null
@@ -243,7 +243,7 @@ fun SettingsScreen(
         }
 
         item {
-            Text("Mentzer Tracker v${updateVm.currentVersion}",
+            Text("Ironset v${updateVm.currentVersion}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
