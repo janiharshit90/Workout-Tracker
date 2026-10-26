@@ -35,6 +35,7 @@ import com.example.mentzertracker.data.WorkoutTemplate
 import com.example.mentzertracker.ui.theme.Iron
 import com.example.mentzertracker.ui.theme.IronShape
 import com.example.mentzertracker.util.daysAgo
+import com.example.mentzertracker.util.sessionsByDay
 import com.example.mentzertracker.util.relativeDay
 
 /** What a template card needs to show, precomputed so the list stays cheap to recompose. */
@@ -86,6 +87,10 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
             .minByOrNull { it.lastTrained }?.template?.id
     }
     val lastWorkout = history.firstOrNull()?.sessionDate
+    val sessionsByDay = remember(history) { sessionsByDay(history) }
+    val templateIds = remember(templates, templateExercises) {
+        templates.map { templateExercises[it.id].orEmpty().toSet() }
+    }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -106,6 +111,13 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+
+        item {
+            WeekStrip(
+                sessionsByDay = sessionsByDay, templateIds = templateIds,
+                lastWorkoutDate = lastWorkout, recoveryDays = recoveryDays
+            )
         }
 
         if (!introDismissed && history.isEmpty()) {

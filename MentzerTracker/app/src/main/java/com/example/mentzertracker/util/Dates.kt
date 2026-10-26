@@ -6,7 +6,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private fun startOfDay(ts: Long): Long = Calendar.getInstance().apply {
+fun startOfDay(ts: Long): Long = Calendar.getInstance().apply {
     timeInMillis = ts
     set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
     set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
