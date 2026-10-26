@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
@@ -28,12 +29,24 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
 
 @Composable
-fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
+fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit, onGoToToday: () -> Unit) {
     val history by vm.history.collectAsState()
     val unit by vm.weightUnit.collectAsState()
     val templates by vm.templates.collectAsState()
     val templateExercises by vm.templateExercises.collectAsState()
     var calendarMode by rememberSaveable { mutableStateOf(false) }
+    var pickingDate by remember { mutableStateOf(false) }
+    var pastDay by remember { mutableStateOf<Long?>(null) }
+    if (pickingDate) {
+        PastDatePickerDialog(onDismiss = { pickingDate = false }, onPick = { pastDay = it; pickingDate = false })
+    }
+    pastDay?.let { day ->
+        PastWorkoutPickDialog(
+            day = day, templates = templates,
+            onDismiss = { pastDay = null },
+            onPick = { templateId -> pastDay = null; vm.openPreview(templateId, day); onGoToToday() }
+        )
+    }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -67,6 +80,7 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
                 title = "History",
                 subtitle = if (sessions.isEmpty()) null else "${sessions.size} sessions \u00b7 tap a set to edit"
             ) {
+                IconButton(onClick = { pickingDate = true }) { Icon(Icons.Filled.EditCalendar, "Log a past workout") }
                 if (sessions.isNotEmpty()) {
                     IconButton(onClick = {
                         scope.launch {
@@ -98,7 +112,7 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
         }
 
         if (sessions.isEmpty()) {
-            item { EmptyMessage("No workouts logged yet.\nLog one from the Today tab.") }
+            item { EmptyMessage("No workouts logged yet.\nLog one from the Today tab, or tap the calendar icon to add a past one.") }
         }
 
         sessions.forEach { (date, sets) ->

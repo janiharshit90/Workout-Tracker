@@ -45,13 +45,24 @@ data class UiEvent(
 )
 
 /** A workout in progress: its display name and the exercises in it, in order. */
-data class ActiveWorkout(val name: String, val exerciseIds: List<Long>)
+data class ActiveWorkout(
+    val name: String,
+    val exerciseIds: List<Long>,
+    /** Midnight of the day being backfilled, or null for a normal workout happening now. */
+    val pastDate: Long? = null
+)
 
 /**
  * The overview shown before a workout starts: what's in it, still editable. Lives only in memory
  * (survives rotation, not an app kill) - a workout becomes real, and persisted, when you tap Start.
  */
-data class WorkoutPreview(val templateId: Long?, val name: String, val exerciseIds: List<Long>)
+data class WorkoutPreview(
+    val templateId: Long?,
+    val name: String,
+    val exerciseIds: List<Long>,
+    /** Midnight of the day being backfilled, or null for a normal workout happening now. */
+    val pastDate: Long? = null
+)
 
 /** The most recent note written for an exercise. */
 data class NoteInfo(val text: String, val date: Long)
@@ -157,6 +168,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     private val _recoveryDays = MutableStateFlow(prefs.getInt(PREF_RECOVERY_DAYS, DEFAULT_RECOVERY_DAYS))
     val recoveryDays: StateFlow<Int> = _recoveryDays
 
+    /** exerciseId -> a stall warning when the last sessions stopped beating your best. */
+    val stalls: StateFlow<Map<Long, Stall>> = combine(history, _recoveryDays) { h, days -> computeStalls(h, days) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     /** Rep range that drives progression suggestions (double progression). */
     private val _repRange = MutableStateFlow(loadRepRange())
     val repRange: StateFlow<IntRange> = _repRange
@@ -232,16 +247,20 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     // ==================================================================
 
     /** Opens the pre-start overview for a template (or an empty custom workout). Starts nothing. */
-    fun openPreview(templateId: Long?) {
+    fun openPreview(templateId: Long?, pastDate: Long? = null) {
+        if (pastDate != null && _activeWorkout.value != null) {
+            postEvent("Finish or discard your current workout first")
+            return
+        }
         viewModelScope.launch {
             if (templateId == null) {
-                _preview.value = WorkoutPreview(null, "Custom workout", emptyList())
+                _preview.value = WorkoutPreview(null, "Custom workout", emptyList(), pastDate)
                 return@launch
             }
             val existing = exerciseDao.getAllOnce().map { it.id }.toSet()
             val t = templateDao.getAllTemplatesOnce().firstOrNull { it.id == templateId } ?: return@launch
             _preview.value = WorkoutPreview(
-                t.id, t.name, templateDao.getExerciseIdsForTemplate(templateId).filter { it in existing }
+                t.id, t.name, templateDao.getExerciseIdsForTemplate(templateId).filter { it in existing }, pastDate
             )
         }
     }
@@ -263,8 +282,9 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val p = _preview.value ?: return  // also makes a double-tap harmless
         setInputs(emptyMap())
         setNotes(emptyMap())
-        setSessionStart(System.currentTimeMillis())
-        setActiveWorkout(ActiveWorkout(p.name, p.exerciseIds))
+        // A backfilled workout has no live clock: its date is the day you picked.
+        setSessionStart(if (p.pastDate == null) System.currentTimeMillis() else null)
+        setActiveWorkout(ActiveWorkout(p.name, p.exerciseIds, p.pastDate))
         _preview.value = null
     }
 
@@ -300,7 +320,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         _activeWorkout.value = w
         prefs.edit().apply {
             if (w == null) remove(PREF_ACTIVE) else putString(PREF_ACTIVE,
-                JSONObject().put("name", w.name).put("ids", JSONArray(w.exerciseIds)).toString())
+                JSONObject().put("name", w.name).put("ids", JSONArray(w.exerciseIds))
+                    .apply { if (w.pastDate != null) put("past", w.pastDate) }.toString())
         }.apply()
     }
 
@@ -309,7 +330,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             prefs.getString(PREF_ACTIVE, null)?.let { raw ->
                 val o = JSONObject(raw)
                 val arr = o.getJSONArray("ids")
-                return ActiveWorkout(o.optString("name", "Workout"), List(arr.length()) { arr.getLong(it) })
+                return ActiveWorkout(
+                    o.optString("name", "Workout"), List(arr.length()) { arr.getLong(it) },
+                    o.optLong("past", 0L).takeIf { it > 0L }
+                )
             }
         } catch (e: Exception) { /* fall through to draft adoption */ }
         // A draft saved before guided workouts existed: adopt it as a workout in progress.
@@ -459,6 +483,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Starts the clock on first activity; restarts it if the previous start is clearly stale. */
     private fun touchSession() {
+        if (_activeWorkout.value?.pastDate != null) return  // backfilling: no live clock
         val now = System.currentTimeMillis()
         val start = _sessionStartedAt.value
         if (start == null || now - start > SESSION_STALE_MS) setSessionStart(now)
@@ -483,9 +508,13 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val heavy = _heavyDutyMode.value
                 val unit = _weightUnit.value
-                val sessionDate = System.currentTimeMillis()
+                val now = System.currentTimeMillis()
+                val past = _activeWorkout.value?.pastDate
+                // A backfilled workout lands on the chosen day, at the current time of day so two
+                // backfilled sessions never share a timestamp (sets are grouped by it).
+                val sessionDate = if (past != null) past + (now - startOfDay(now)) else now
                 // Whole-session length; 0 (unknown) if there was no clock or it looks abandoned.
-                val elapsedSec = _sessionStartedAt.value?.let { (sessionDate - it) / 1000L } ?: 0L
+                val elapsedSec = if (past != null) 0L else _sessionStartedAt.value?.let { (now - it) / 1000L } ?: 0L
                 val durationSec = if (elapsedSec in 1..(SESSION_STALE_MS / 1000L)) elapsedSec.toInt() else 0
                 // Guards against a draft that references an exercise deleted since (FK crash).
                 val exercisesById = exerciseDao.getAllOnce().associateBy { it.id }
@@ -548,8 +577,9 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                             exerciseId = exId, name = ex.name,
                             sets = mine.map { SummarySet(it.weight, it.reps, it.toFailure, it.forcedReps, it.isWarmup) },
                             top = top,
-                            isPr = top != null && beatsBest(previousBest[exId]?.let { TopSet(it.weight, it.reps) }, top),
-                            change = top?.let { compareToLast(previousTop[exId], it) },
+                            // PR / "vs last time" only make sense for a workout happening now.
+                            isPr = past == null && top != null && beatsBest(previousBest[exId]?.let { TopSet(it.weight, it.reps) }, top),
+                            change = if (past != null) null else top?.let { compareToLast(previousTop[exId], it) },
                             note = mine.firstOrNull { it.notes.isNotBlank() }?.notes.orEmpty()
                         )
                     }

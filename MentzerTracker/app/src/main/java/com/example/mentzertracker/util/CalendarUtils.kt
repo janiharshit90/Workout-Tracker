@@ -77,3 +77,24 @@ fun matchTemplate(sessionExerciseIds: Set<Long>, templateExerciseIds: List<Set<L
 
 /** The letter shown for template number [index] (A, B, ...), matching the start screen. */
 fun templateLetter(index: Int): String = if (index < 26) ('A' + index).toString() else (index + 1).toString()
+
+/**
+ * Material's date picker reports a day as UTC midnight; turns that into local midnight of the same
+ * calendar day (otherwise people west of UTC get the day before).
+ */
+fun pickerUtcToLocalDay(utcMillis: Long): Long {
+    val utc = Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = utcMillis }
+    return Calendar.getInstance().apply {
+        clear()
+        set(utc.get(Calendar.YEAR), utc.get(Calendar.MONTH), utc.get(Calendar.DAY_OF_MONTH), 0, 0, 0)
+    }.timeInMillis
+}
+
+/** The reverse of [pickerUtcToLocalDay]: the UTC midnight the date picker expects for a local day. */
+fun localDayToPickerUtc(localDay: Long): Long {
+    val local = Calendar.getInstance().apply { timeInMillis = localDay }
+    return Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
+        clear()
+        set(local.get(Calendar.YEAR), local.get(Calendar.MONTH), local.get(Calendar.DAY_OF_MONTH), 0, 0, 0)
+    }.timeInMillis
+}
