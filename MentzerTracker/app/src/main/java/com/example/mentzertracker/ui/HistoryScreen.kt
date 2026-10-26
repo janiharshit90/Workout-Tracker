@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +31,9 @@ import kotlin.math.roundToLong
 fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
     val history by vm.history.collectAsState()
     val unit by vm.weightUnit.collectAsState()
+    val templates by vm.templates.collectAsState()
+    val templateExercises by vm.templateExercises.collectAsState()
+    var calendarMode by rememberSaveable { mutableStateOf(false) }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -71,6 +75,26 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit) {
                     }) { Icon(Icons.Filled.Share, "Export CSV") }
                 }
             }
+        }
+
+        if (sessions.isNotEmpty()) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !calendarMode, onClick = { calendarMode = false }, label = { Text("LIST") })
+                    FilterChip(selected = calendarMode, onClick = { calendarMode = true }, label = { Text("CALENDAR") })
+                }
+            }
+        }
+        if (calendarMode && sessions.isNotEmpty()) {
+            item {
+                val byDay = remember(history) { sessionsByDay(history) }
+                CalendarPanel(
+                    sessionsByDay = byDay,
+                    templateNames = templates.map { it.name },
+                    templateIds = templates.map { templateExercises[it.id].orEmpty().toSet() }
+                )
+            }
+            return@LazyColumn
         }
 
         if (sessions.isEmpty()) {
