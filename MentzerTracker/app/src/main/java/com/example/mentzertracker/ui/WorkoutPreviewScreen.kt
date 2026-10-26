@@ -50,6 +50,7 @@ fun WorkoutPreviewScreen(vm: WorkoutViewModel, preview: WorkoutPreview) {
     val recoveryDays by vm.recoveryDays.collectAsState()
     val repRange by vm.repRange.collectAsState()
     val lastNotes by vm.lastNotes.collectAsState()
+    val stalls by vm.stalls.collectAsState()
 
     BackHandler { vm.closePreview() }
 
@@ -103,6 +104,16 @@ fun WorkoutPreviewScreen(vm: WorkoutViewModel, preview: WorkoutPreview) {
                         },
                         style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+
+            if (preview.pastDate != null) {
+                item {
+                    Text(
+                        "LOGGING FOR ${formatDate(preview.pastDate, "EEEE, MMM d").uppercase()} \u00b7 NO TIMER",
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 1.5.sp, color = scheme.primary
                     )
                 }
             }
@@ -171,6 +182,7 @@ fun WorkoutPreviewScreen(vm: WorkoutViewModel, preview: WorkoutPreview) {
                                 maxLines = 1, overflow = TextOverflow.Ellipsis
                             )
                         }
+                        stalls[ex.id]?.let { StallNotice(it, unit, stepFor(ex.stepLbs, unit), recoveryDays, compact = true) }
                         lastNotes[ex.id]?.let { n ->
                             Text("Note: ${n.text}", style = MaterialTheme.typography.bodySmall,
                                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
@@ -232,9 +244,9 @@ fun WorkoutPreviewScreen(vm: WorkoutViewModel, preview: WorkoutPreview) {
                 ) {
                     Icon(Icons.Filled.PlayArrow, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("START WORKOUT", style = MaterialTheme.typography.titleMedium, letterSpacing = 1.sp)
+                    Text(if (preview.pastDate != null) "START LOGGING" else "START WORKOUT", style = MaterialTheme.typography.titleMedium, letterSpacing = 1.sp)
                 }
-                Text("The clock starts when you tap Start",
+                Text(if (preview.pastDate != null) "Saved on that day \u2014 no clock runs" else "The clock starts when you tap Start",
                     style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
             }
         }

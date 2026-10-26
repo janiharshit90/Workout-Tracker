@@ -76,6 +76,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
     val startedAt by vm.sessionStartedAt.collectAsState()
     val notes by vm.notes.collectAsState()
     val lastNotes by vm.lastNotes.collectAsState()
+    val stalls by vm.stalls.collectAsState()
 
     val exercises = remember(workout, allExercises) {
         val byId = allExercises.associateBy { it.id }
@@ -183,6 +184,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
         WorkoutHeader(
             name = workout.name,
             startedAt = startedAt,
+            pastDate = workout.pastDate,
             onFinish = { showReview = true },
             onClose = { showCancel = true }
         )
@@ -245,6 +247,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                         repRange = repRange,
                         note = notes[ex.id].orEmpty(),
                         lastNote = lastNotes[ex.id],
+                        stall = stalls[ex.id],
                         onNote = { vm.setNote(ex.id, it) },
                         onToggleWarmup = { idx -> vm.toggleWarmup(ex.id, idx) },
                         onWeight = { idx, v -> vm.updateSet(ex.id, idx, weight = v) },
@@ -308,7 +311,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-private fun WorkoutHeader(name: String, startedAt: Long?, onFinish: () -> Unit, onClose: () -> Unit) {
+private fun WorkoutHeader(name: String, startedAt: Long?, pastDate: Long?, onFinish: () -> Unit, onClose: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -317,7 +320,12 @@ private fun WorkoutHeader(name: String, startedAt: Long?, onFinish: () -> Unit, 
             Text(name.uppercase(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
                 letterSpacing = 3.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            WorkoutClock(startedAt)
+            if (pastDate != null) {
+                Text("LOGGING FOR ${formatDate(pastDate, "EEE, MMM d").uppercase()}",
+                    style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            } else {
+                WorkoutClock(startedAt)
+            }
         }
         GhostButton(onClick = onFinish) { Text("FINISH", style = MaterialTheme.typography.titleSmall) }
         IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "Discard workout") }
@@ -410,6 +418,7 @@ private fun ExercisePage(
     repRange: IntRange,
     note: String,
     lastNote: NoteInfo?,
+    stall: Stall?,
     onNote: (String) -> Unit,
     onToggleWarmup: (Int) -> Unit,
     onWeight: (Int, String) -> Unit,
@@ -484,6 +493,7 @@ private fun ExercisePage(
                     style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant
                 )
             }
+            if (stall != null) StallNotice(stall, unit, step, recoveryDays)
             if (lastNote != null) {
                 Text(
                     "NOTE \u00b7 ${relativeDay(lastNote.date).uppercase()}",

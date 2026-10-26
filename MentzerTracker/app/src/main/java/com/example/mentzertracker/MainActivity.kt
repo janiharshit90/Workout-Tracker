@@ -127,7 +127,15 @@ fun AppRoot(vm: WorkoutViewModel, updateVm: UpdateViewModel) {
             composable("today") {
                 TodayScreen(vm, onOpenProgress = openProgress, onOpenPrinciples = { nav.navigate("principles") })
             }
-            composable("history") { HistoryScreen(vm, onOpenProgress = openProgress) }
+            composable("history") {
+                HistoryScreen(vm, onOpenProgress = openProgress, onGoToToday = {
+                    nav.navigate("today") {
+                        popUpTo(nav.graph.startDestinationId) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                })
+            }
             composable("prs") { PRsScreen(vm, onExerciseClick = openProgress) }
             composable("settings") {
                 SettingsScreen(
