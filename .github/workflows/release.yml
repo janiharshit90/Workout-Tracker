@@ -98,9 +98,17 @@ jobs:
           name: Rarelift-play-${{ steps.ver.outputs.version }}
           path: Rarelift-play-*.aab
 
+      # Hand-written notes go first when docs/release-notes/<tag>.md exists. The old app's update
+      # dialog shows these, so anything users must do (like the 2.0 move) belongs there.
+      - name: Release notes
+        run: |
+          f="docs/release-notes/${{ steps.ver.outputs.tag }}.md"
+          if [ -f "$f" ]; then cp "$f" release-notes.md; else : > release-notes.md; fi
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && steps.ver.outputs.tag || github.ref_name }}
           files: Rarelift-*.apk
+          body_path: release-notes.md
           generate_release_notes: true

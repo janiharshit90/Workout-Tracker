@@ -44,6 +44,13 @@ it as a different app and the old one can't update into it. Move over once, by h
 3. In Rarelift: **Settings → Restore from backup**, pick the file.
 4. Check your history is there, then uninstall the old app. Rarelift updates itself from then on.
 
+## Two editions
+- **GitHub edition** (`github` flavor): the APK on Releases. Updates itself from GitHub, everything unlocked.
+- **Play edition** (`play` flavor): for Google Play. No self-updater; Stats trends, routines and sharing
+  are **Rarelift Pro**, a one-time in-app purchase (product ID `rarelift_pro`).
+
+Launching on Play, step by step: [docs/LAUNCH.md](docs/LAUNCH.md). Privacy policy: [PRIVACY.md](PRIVACY.md).
+
 ## Releasing a new version
 
 ```
@@ -52,7 +59,9 @@ git push origin v1.11.0
 ```
 
 The **Release** workflow builds a signed APK (version `1.11.0`, versionCode `11100`) and publishes a
-GitHub Release; the app finds it on its next check. You can also run it from
+GitHub Release; the app finds it on its next check. The same run also produces the signed Play App
+Bundle as a downloadable artifact. Hand-written notes in `docs/release-notes/v<version>.md` are put at
+the top of the release (the in-app update dialog shows them). You can also run it from
 Actions → Release → Run workflow and type the version.
 
 Signing needs four repository secrets: `KEYSTORE_BASE64`, `STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
@@ -63,8 +72,8 @@ updates must be signed with the same key forever).
 
 - Android Studio (or just the Gradle wrapper), JDK 17, Android SDK 35.
 - Open the `MentzerTracker/` folder.
-- Unit tests (plain JVM, no emulator): `./gradlew testDebugUnitTest`
-- Debug APK: `./gradlew assembleDebug`. Every push and pull request is built and tested by the
+- Unit tests (plain JVM, no emulator): `./gradlew testGithubDebugUnitTest`
+- Debug APKs: `./gradlew assembleGithubDebug assemblePlayDebug`. Every push and pull request is built and tested by the
   **Build APK** workflow; the APK is attached to the run.
 - For the in-app updater to work in a local build, add `updateRepo=janiharshit90/Workout-Tracker`
   to `gradle.properties` (CI fills it in automatically).
