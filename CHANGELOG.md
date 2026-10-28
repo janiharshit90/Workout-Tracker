@@ -9,8 +9,9 @@ and picked up by the app's built-in updater. Detailed notes for older rounds are
   "Ironset" was dropped because a strength tracker called "IronSets" already exists.
 - **One-time move:** Android treats the new ID as a different app, so existing users back up, install
   Rarelift, and restore (steps in the README). Backups from the old app restore as-is.
-- The old app's updater now explains this when it sees the new release, instead of a bare
-  "different app" error (from the next version of the old app onward).
+- The release notes for 2.0.0 must carry those steps: the old app's update dialog shows them, then
+  refuses to install the new ID. The updater's "different app" message is now friendlier too, for any
+  future move.
 
 ## 1.11.0 (2026-10-29)
 
