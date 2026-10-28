@@ -7,8 +7,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +20,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.mentzertracker.WorkoutViewModel
 import com.example.mentzertracker.data.Exercise
+import com.example.mentzertracker.util.BeyondFailure
 import com.example.mentzertracker.util.WeightUnit
 import com.example.mentzertracker.util.formatWeight
 import com.example.mentzertracker.util.parseWeight
@@ -66,19 +68,25 @@ fun AddExerciseDialog(
     )
 }
 
-/** Exercises are added to the template in the order you tick them (shown as 1, 2, 3...). */
+/**
+ * Exercises are added to the template in the order you tick them (shown as 1, 2, 3...). Once two or
+ * more are picked, each can be linked to the next as a superset (no rest between them).
+ */
 @Composable
 fun AddTemplateDialog(
     exercises: List<Exercise>,
     title: String = "New Template",
     initialName: String = "",
     initialSelectedIds: List<Long> = emptyList(),
+    initialSupersets: Set<Long> = emptySet(),
     confirmLabel: String = "Create",
     onDismiss: () -> Unit,
-    onConfirm: (name: String, exerciseIds: List<Long>) -> Unit
+    onConfirm: (name: String, exerciseIds: List<Long>, supersets: Set<Long>) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
     val selected = remember { mutableStateListOf(*initialSelectedIds.toTypedArray()) }
+    val linked = remember { mutableStateListOf(*initialSupersets.toTypedArray()) }
+    val names = remember(exercises) { exercises.associate { it.id to it.name } }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -118,11 +126,42 @@ fun AddTemplateDialog(
                         }
                     }
                 }
+                if (selected.size >= 2) {
+                    Spacer(Modifier.height(10.dp))
+                    Text("Supersets (tap a link for no rest into the next one)", style = MaterialTheme.typography.labelMedium)
+                    Column(Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+                        selected.forEachIndexed { i, id ->
+                            Text("${i + 1}. ${names[id].orEmpty()}", style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(vertical = 2.dp))
+                            if (i < selected.lastIndex) {
+                                val on = id in linked
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .clickable { if (on) linked.remove(id) else linked.add(id) }
+                                        .padding(start = 12.dp, top = 2.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(if (on) Icons.Filled.Link else Icons.Filled.LinkOff, null, Modifier.size(16.dp),
+                                        tint = if (on) MaterialTheme.colorScheme.primary
+                                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (on) "SUPERSET · NO REST" else "rest",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (on) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name, selected.toList()) },
+                onClick = {
+                    val ids = selected.toList()
+                    onConfirm(name, ids, linked.filter { it in ids && it != ids.last() }.toSet())
+                },
                 enabled = name.isNotBlank() && selected.isNotEmpty()
             ) { Text(confirmLabel) }
         },
@@ -136,18 +175,18 @@ fun EditSetDialog(
     initialWeight: String,
     initialReps: String,
     initialToFailure: Boolean,
-    initialForcedReps: Int,
+    initialBeyond: BeyondFailure,
     initialWarmup: Boolean,
     initialNotes: String,
     unitLabel: String,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
-    onConfirm: (weight: String, reps: String, toFailure: Boolean, forcedReps: Int, isWarmup: Boolean, notes: String) -> Unit
+    onConfirm: (weight: String, reps: String, toFailure: Boolean, beyond: BeyondFailure, isWarmup: Boolean, notes: String) -> Unit
 ) {
     var weight by remember { mutableStateOf(initialWeight) }
     var reps by remember { mutableStateOf(initialReps) }
     var toFailure by remember { mutableStateOf(initialToFailure) }
-    var forced by remember { mutableStateOf(initialForcedReps) }
+    var beyond by remember { mutableStateOf(initialBeyond) }
     var warmup by remember { mutableStateOf(initialWarmup) }
     var notes by remember { mutableStateOf(initialNotes) }
     val valid = parseWeight(weight) != null && (reps.toIntOrNull() ?: 0) > 0
@@ -173,7 +212,7 @@ fun EditSetDialog(
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(
-                    Modifier.fillMaxWidth().clickable { warmup = !warmup; if (warmup) { toFailure = false; forced = 0 } },
+                    Modifier.fillMaxWidth().clickable { warmup = !warmup; if (warmup) { toFailure = false; beyond = BeyondFailure() } },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -181,11 +220,11 @@ fun EditSetDialog(
                         Text("Not counted toward PRs or progression", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = warmup, onCheckedChange = { warmup = it; if (it) { toFailure = false; forced = 0 } })
+                    Switch(checked = warmup, onCheckedChange = { warmup = it; if (it) { toFailure = false; beyond = BeyondFailure() } })
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(
-                    Modifier.fillMaxWidth().clickable { toFailure = !toFailure; if (!toFailure) forced = 0; if (toFailure) warmup = false },
+                    Modifier.fillMaxWidth().clickable { toFailure = !toFailure; if (!toFailure) beyond = BeyondFailure(); if (toFailure) warmup = false },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -195,22 +234,13 @@ fun EditSetDialog(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Taken to failure", Modifier.weight(1f))
-                    Switch(checked = toFailure, onCheckedChange = { toFailure = it; if (!it) forced = 0; if (it) warmup = false })
+                    Switch(checked = toFailure, onCheckedChange = { toFailure = it; if (!it) beyond = BeyondFailure(); if (it) warmup = false })
                 }
                 if (toFailure) {
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Forced reps (with a spot)", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { forced = (forced - 1).coerceAtLeast(0) }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Filled.Remove, "Fewer forced reps", Modifier.size(18.dp))
-                        }
-                        Text("$forced", style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(horizontal = 8.dp))
-                        IconButton(
-                            onClick = { forced = (forced + 1).coerceAtMost(WorkoutViewModel.MAX_FORCED_REPS) },
-                            modifier = Modifier.size(32.dp)
-                        ) { Icon(Icons.Filled.Add, "More forced reps", Modifier.size(18.dp)) }
-                    }
+                    BeyondFailurePanel(
+                        beyond, onNudge = { t, d -> beyond = beyond.nudge(t, d) },
+                        modifier = Modifier.padding(top = 8.dp), compact = true
+                    )
                 }
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
@@ -222,7 +252,7 @@ fun EditSetDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(weight, reps, toFailure, if (toFailure) forced else 0, warmup, notes) }, enabled = valid) {
+            TextButton(onClick = { onConfirm(weight, reps, toFailure, if (toFailure) beyond else BeyondFailure(), warmup, notes) }, enabled = valid) {
                 Text("Save")
             }
         },

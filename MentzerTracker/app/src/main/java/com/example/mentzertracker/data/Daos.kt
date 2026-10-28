@@ -41,7 +41,7 @@ interface WorkoutDao {
     @Query("""
         SELECT s.id, s.exerciseId, e.name AS exerciseName, s.sessionDate,
                s.setNumber, s.weight, s.reps, s.notes, s.toFailure, s.forcedReps,
-               s.durationSec, s.isWarmup
+               s.durationSec, s.isWarmup, s.negatives, s.restPauseReps, s.holdSec, s.templateId
         FROM workout_sets s JOIN exercises e ON s.exerciseId = e.id
         ORDER BY s.sessionDate DESC, e.sortOrder ASC, s.setNumber ASC
     """)
@@ -50,7 +50,7 @@ interface WorkoutDao {
     @Query("""
         SELECT s.id, s.exerciseId, e.name AS exerciseName, s.sessionDate,
                s.setNumber, s.weight, s.reps, s.notes, s.toFailure, s.forcedReps,
-               s.durationSec, s.isWarmup
+               s.durationSec, s.isWarmup, s.negatives, s.restPauseReps, s.holdSec, s.templateId
         FROM workout_sets s JOIN exercises e ON s.exerciseId = e.id
         ORDER BY s.sessionDate ASC, e.sortOrder ASC, s.setNumber ASC
     """)
@@ -93,6 +93,27 @@ interface PRDao {
     suspend fun deleteForExercise(exerciseId: Long)
 
     @Query("DELETE FROM personal_records")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface BodyWeightDao {
+    @Query("SELECT * FROM body_weights ORDER BY date ASC")
+    fun observeAll(): Flow<List<BodyWeight>>
+
+    @Query("SELECT * FROM body_weights ORDER BY date ASC")
+    suspend fun getAllOnce(): List<BodyWeight>
+
+    @Insert suspend fun insert(item: BodyWeight): Long
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertAll(items: List<BodyWeight>)
+
+    @Query("SELECT * FROM body_weights WHERE id = :id")
+    suspend fun getById(id: Long): BodyWeight?
+
+    @Query("DELETE FROM body_weights WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM body_weights")
     suspend fun deleteAll()
 }
 

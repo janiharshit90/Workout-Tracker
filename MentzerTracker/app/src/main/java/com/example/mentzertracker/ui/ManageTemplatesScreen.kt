@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
@@ -22,6 +23,11 @@ fun ManageTemplatesScreen(vm: WorkoutViewModel, onBack: () -> Unit) {
     val exercises by vm.exercises.collectAsState()
     // Reactive map, so the edit dialog opens pre-filled instantly (no async gap anymore).
     val templateExercises by vm.templateExercises.collectAsState()
+    val templateSupersets by vm.templateSupersets.collectAsState()
+    var showRoutines by remember { mutableStateOf(false) }
+    if (showRoutines) {
+        RoutinesDialog(onDismiss = { showRoutines = false }, onInstall = { key -> vm.installRoutine(key); showRoutines = false })
+    }
     val names = remember(exercises) { exercises.associate { it.id to it.name } }
 
     var showAdd by remember { mutableStateOf(false) }
@@ -32,7 +38,7 @@ fun ManageTemplatesScreen(vm: WorkoutViewModel, onBack: () -> Unit) {
         AddTemplateDialog(
             exercises = exercises,
             onDismiss = { showAdd = false },
-            onConfirm = { name, ids -> vm.addTemplate(name, ids); showAdd = false }
+            onConfirm = { name, ids, ss -> vm.addTemplate(name, ids, ss); showAdd = false }
         )
     }
     editing?.let { t ->
@@ -41,9 +47,10 @@ fun ManageTemplatesScreen(vm: WorkoutViewModel, onBack: () -> Unit) {
             title = "Edit Template",
             initialName = t.name,
             initialSelectedIds = templateExercises[t.id].orEmpty(),
+            initialSupersets = templateSupersets[t.id].orEmpty(),
             confirmLabel = "Save",
             onDismiss = { editing = null },
-            onConfirm = { name, ids -> vm.updateTemplate(t.id, name, ids); editing = null }
+            onConfirm = { name, ids, ss -> vm.updateTemplate(t.id, name, ids, ss); editing = null }
         )
     }
     deleting?.let { t ->
@@ -66,16 +73,30 @@ fun ManageTemplatesScreen(vm: WorkoutViewModel, onBack: () -> Unit) {
                 Icon(Icons.Filled.Add, null); Spacer(Modifier.width(8.dp)); Text("Add Template")
             }
         }
+        item {
+            OutlinedButton(onClick = { showRoutines = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.AutoAwesome, null); Spacer(Modifier.width(8.dp)); Text("Add a Heavy Duty routine")
+            }
+        }
         if (templates.isEmpty()) item { EmptyMessage("No templates yet.") }
 
         items(templates, key = { it.id }) { t ->
-            val exNames = templateExercises[t.id].orEmpty().mapNotNull { names[it] }
+            val ids = templateExercises[t.id].orEmpty()
+            val ss = templateSupersets[t.id].orEmpty()
+            // "A + B" for supersets, arrows between everything else.
+            val flow = buildString {
+                ids.forEachIndexed { i, id ->
+                    append(names[id] ?: return@forEachIndexed)
+                    if (i < ids.lastIndex) append(if (id in ss) " + " else " \u2192 ")
+                }
+            }
+            val exNames = ids.mapNotNull { names[it] }
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(14.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(t.name, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (exNames.isEmpty()) "No exercises" else exNames.joinToString(" \u2192 "),
+                            if (exNames.isEmpty()) "No exercises" else flow,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

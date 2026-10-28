@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ShowChart
@@ -195,6 +196,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                 count = exercises.size,
                 current = current,
                 isDone = { isDone(exercises[it].id) },
+                isLinked = { linksToNext(workout.exerciseIds, workout.supersets, exercises[it].id) },
                 onSelect = { page = it }
             )
             Row(
@@ -233,8 +235,14 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                 }
             } else {
                 val ex = exercises[current]
+                val intoNext = exercises.getOrNull(current + 1)
+                    ?.takeIf { linksToNext(workout.exerciseIds, workout.supersets, ex.id) }
+                val fromPrev = exercises.getOrNull(current - 1)
+                    ?.takeIf { linkedFrom(workout.exerciseIds, workout.supersets, ex.id) == it.id }
                 key(ex.id) {
                     ExercisePage(
+                        supersetInto = intoNext?.name,
+                        supersetFrom = fromPrev?.name,
                         exercise = ex,
                         sets = visibleSets(ex.id),
                         heavy = heavy,
@@ -253,7 +261,7 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                         onWeight = { idx, v -> vm.updateSet(ex.id, idx, weight = v) },
                         onReps = { idx, v -> vm.updateSet(ex.id, idx, reps = v) },
                         onToggleFailure = { idx -> vm.toggleFailure(ex.id, idx) },
-                        onForcedReps = { idx, d -> vm.adjustForcedReps(ex.id, idx, d) },
+                        onTechnique = { idx, t, d -> vm.adjustTechnique(ex.id, idx, t, d) },
                         onAddSet = { vm.addSet(ex.id) },
                         onRemoveSet = { vm.removeSet(ex.id) },
                         onCopyLast = { vm.fillFromLast(ex.id) },
@@ -273,7 +281,9 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
             ) {
                 val here = exercises.getOrNull(current)
                 val upNext = exercises.getOrNull(current + 1)
-                RestRow(
+                val noRest = here != null && upNext != null &&
+                    linksToNext(workout.exerciseIds, workout.supersets, here.id)
+                if (noRest) NoRestRow(upNext!!.name) else RestRow(
                     vm,
                     title = "Rest \u00b7 ${here?.name ?: workout.name}",
                     nextLine = when {
@@ -296,8 +306,14 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
                             shape = IronShape,
                             modifier = Modifier.weight(1f).height(56.dp)
                         ) {
-                            Text(if (isLast) "REVIEW & FINISH" else "NEXT EXERCISE",
-                                style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                when {
+                                    isLast -> "REVIEW & FINISH"
+                                    noRest -> "GO — NO REST"
+                                    else -> "NEXT EXERCISE"
+                                },
+                                style = MaterialTheme.typography.titleMedium
+                            )
                         }
                     }
                 }
@@ -375,14 +391,20 @@ private fun WorkoutClock(startedAt: Long?) {
     }
 }
 
-/** One bar per exercise: lime = done, white = here, grey = still to do. Tap to jump. */
+/**
+ * One bar per exercise: lime = done, white = here, grey = still to do. Tap to jump.
+ * Supersetted exercises sit almost touching, so the pairs read as one block.
+ */
 @Composable
-private fun ProgressSegments(count: Int, current: Int, isDone: (Int) -> Boolean, onSelect: (Int) -> Unit) {
+private fun ProgressSegments(
+    count: Int, current: Int, isDone: (Int) -> Boolean, isLinked: (Int) -> Boolean, onSelect: (Int) -> Unit
+) {
     val scheme = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
         repeat(count) { i ->
             Box(
                 Modifier.weight(1f).height(24.dp)
+                    .padding(end = if (i == count - 1) 0.dp else if (isLinked(i)) 2.dp else 6.dp)
                     .clickable(onClickLabel = "Go to exercise ${i + 1}", role = Role.Button) { onSelect(i) },
                 contentAlignment = Alignment.Center
             ) {
@@ -407,6 +429,10 @@ private fun ProgressSegments(count: Int, current: Int, isDone: (Int) -> Boolean,
 @Composable
 private fun ExercisePage(
     exercise: Exercise,
+    /** Next exercise's name when this one goes straight into it (pre-exhaust). */
+    supersetInto: String?,
+    /** Previous exercise's name when this one follows it with no rest. */
+    supersetFrom: String?,
     sets: List<SetInput>,
     heavy: Boolean,
     unit: WeightUnit,
@@ -424,7 +450,7 @@ private fun ExercisePage(
     onWeight: (Int, String) -> Unit,
     onReps: (Int, String) -> Unit,
     onToggleFailure: (Int) -> Unit,
-    onForcedReps: (Int, Int) -> Unit,
+    onTechnique: (Int, Technique, Int) -> Unit,
     onAddSet: () -> Unit,
     onRemoveSet: () -> Unit,
     onCopyLast: () -> Unit,
@@ -439,6 +465,18 @@ private fun ExercisePage(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        if (supersetInto != null || supersetFrom != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Link, null, Modifier.size(16.dp), tint = scheme.primary)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (supersetFrom != null) "SUPERSET · STRAIGHT FROM ${supersetFrom.uppercase()}"
+                    else "PRE-EXHAUST · THEN STRAIGHT INTO ${supersetInto!!.uppercase()}",
+                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp, color = scheme.primary, maxLines = 2
+                )
+            }
+        }
         Row(verticalAlignment = Alignment.Top) {
             Text(
                 exercise.name.uppercase(),
@@ -544,7 +582,7 @@ private fun ExercisePage(
                 onNudgeReps = { delta -> onReps(idx, nudgeReps(s.reps, delta, repsFallback)) },
                 onToggleFailure = { onToggleFailure(idx) },
                 onToggleWarmup = { onToggleWarmup(idx) },
-                onForcedReps = { d -> onForcedReps(idx, d) }
+                onTechnique = { t, d -> onTechnique(idx, t, d) }
             )
         }
 
@@ -594,7 +632,7 @@ private fun SetBlock(
     onNudgeReps: (Int) -> Unit,
     onToggleFailure: () -> Unit,
     onToggleWarmup: () -> Unit,
-    onForcedReps: (Int) -> Unit
+    onTechnique: (Technique, Int) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
     val numberStyle = TextStyle(fontFamily = DisplayFont, fontWeight = FontWeight.Bold, fontSize = if (big) 40.sp else 28.sp)
@@ -661,14 +699,7 @@ private fun SetBlock(
         }
 
         if (trackFailure && set.toFailure) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Forced reps (with a spot)", Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-                SquareButton("−", "Fewer forced reps") { onForcedReps(-1) }
-                Text("${set.forcedReps}", style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(horizontal = 14.dp))
-                SquareButton("+", "More forced reps") { onForcedReps(1) }
-            }
+            BeyondFailurePanel(set.beyond, onTechnique, compact = !big)
         }
     }
 }
@@ -703,14 +734,6 @@ private fun StepperRow(minus: String, plus: String, onMinus: () -> Unit, onPlus:
         GhostButton(onClick = onPlus, contentPadding = PaddingValues(0.dp),
             modifier = Modifier.weight(1f).height(44.dp)) { Text(plus, style = MaterialTheme.typography.titleMedium) }
     }
-}
-
-@Composable
-private fun SquareButton(symbol: String, description: String, onClick: () -> Unit) {
-    GhostButton(
-        onClick = onClick, contentPadding = PaddingValues(0.dp),
-        modifier = Modifier.size(44.dp).semantics { contentDescription = description }
-    ) { Text(symbol, style = MaterialTheme.typography.titleMedium) }
 }
 
 /** Outlined button with plain white text: lime is kept for the things that matter. */
@@ -753,6 +776,21 @@ private fun nudgeReps(current: String, delta: Int, fallback: Int?): String {
 // ---------------------------------------------------------------------------------------------
 // Rest timer (compact; the length is set in Settings)
 // ---------------------------------------------------------------------------------------------
+
+/** Shown instead of the rest timer when this exercise goes straight into the next one. */
+@Composable
+private fun NoRestRow(next: String) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().height(48.dp).border(1.dp, scheme.primary, IronShape).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Filled.Link, null, tint = scheme.primary)
+        Spacer(Modifier.width(8.dp))
+        Text("NO REST — STRAIGHT INTO ${next.uppercase()}", style = MaterialTheme.typography.titleSmall,
+            color = scheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
 
 @Composable
 private fun RestRow(vm: WorkoutViewModel, title: String, nextLine: String) {

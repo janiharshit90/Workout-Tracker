@@ -63,4 +63,16 @@ class CalendarUtilsTest {
         assertEquals("A", templateLetter(0))
         assertEquals("C", templateLetter(2))
     }
+
+    @Test fun templateIndexPrefersTheStoredTemplateThenFallsBackToMatching() {
+        val idx = TemplateIndex(ids = listOf(10L, 20L), names = listOf("A", "B"),
+            exerciseIds = listOf(setOf(1L, 2L, 3L), setOf(4L, 5L)))
+        // Stored template wins even when the exercises look like the other one.
+        assertEquals(1, idx.indexOf(SessionInfo(0, setOf(1L, 2L, 3L), emptyList(), 3, 0, templateId = 20L)))
+        // Nothing stored: matched by overlap.
+        assertEquals(0, idx.indexOf(SessionInfo(0, setOf(1L, 2L, 3L), emptyList(), 3, 0)))
+        // Stored template since deleted: falls back too.
+        assertEquals(1, idx.indexOf(SessionInfo(0, setOf(4L, 5L), emptyList(), 2, 0, templateId = 99L)))
+        assertEquals("Custom workout", idx.nameOf(SessionInfo(0, setOf(42L), emptyList(), 1, 0)))
+    }
 }

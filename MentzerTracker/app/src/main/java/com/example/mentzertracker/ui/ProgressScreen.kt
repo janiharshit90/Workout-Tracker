@@ -77,7 +77,7 @@ fun ProgressScreen(vm: WorkoutViewModel, exerciseId: Long, onBack: () -> Unit) {
         }
         item { StatsRow(values, unit) }
         item {
-            if (points.size >= 2) ProgressChart(values, points.first().date, points.last().date, unit)
+            if (points.size >= 2) LineChart(values, points.first().date, points.last().date, unit.label)
             else Text("Log one more session to see a trend line.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall)
@@ -120,48 +120,5 @@ private fun StatCell(label: String, value: String, suffix: String?) {
             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(label, style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun ProgressChart(values: List<Float>, firstDate: Long, lastDate: Long, unit: WeightUnit) {
-    val primary = MaterialTheme.colorScheme.primary
-    val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
-    val minV = values.min()
-    val maxV = values.max()
-    val range = (maxV - minV).let { if (it < 1f) 1f else it }
-
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
-            Text("${formatWeight(maxV)} ${unit.label}", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Canvas(Modifier.fillMaxWidth().height(180.dp).padding(vertical = 8.dp, horizontal = 6.dp)) {
-                val w = size.width
-                val h = size.height
-                val stepX = w / (values.size - 1)
-                val points = values.mapIndexed { i, v -> Offset(i * stepX, h - ((v - minV) / range) * h) }
-
-                for (i in 0..3) {
-                    val y = h * i / 3
-                    drawLine(gridColor, Offset(0f, y), Offset(w, y), strokeWidth = 1.dp.toPx())
-                }
-                for (i in 0 until points.size - 1) {
-                    drawLine(primary, points[i], points[i + 1], strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
-                }
-                points.forEachIndexed { i, p ->
-                    drawCircle(primary, radius = if (i == points.lastIndex) 6.dp.toPx() else 4.dp.toPx(), center = p)
-                }
-            }
-            Text("${formatWeight(minV)} ${unit.label}", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth()) {
-                Text(formatDate(firstDate, "MMM d"), style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.weight(1f))
-                Text(formatDate(lastDate, "MMM d"), style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
     }
 }

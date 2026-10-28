@@ -22,6 +22,7 @@ object BackupManager {
         val templates = db.templateDao().getAllTemplatesOnce()
         val links = db.templateDao().getAllTemplateExercisesOnce()
         val sets = db.workoutDao().getAllOnce()
+        val bodyWeights = db.bodyWeightDao().getAllOnce()
 
         return JSONObject()
             .put("app", APP_TAG)
@@ -43,7 +44,8 @@ object BackupManager {
             .put("templateExercises", JSONArray().apply {
                 links.forEach {
                     put(JSONObject().put("templateId", it.templateId)
-                        .put("exerciseId", it.exerciseId).put("sortOrder", it.sortOrder))
+                        .put("exerciseId", it.exerciseId).put("sortOrder", it.sortOrder)
+                        .put("supersetNext", it.supersetNext))
                 }
             })
             .put("sets", JSONArray().apply {
@@ -53,7 +55,14 @@ object BackupManager {
                         .put("weight", it.weight.toDouble()).put("reps", it.reps)
                         .put("notes", it.notes)
                         .put("toFailure", it.toFailure).put("forcedReps", it.forcedReps)
-                        .put("durationSec", it.durationSec).put("isWarmup", it.isWarmup))
+                        .put("durationSec", it.durationSec).put("isWarmup", it.isWarmup)
+                        .put("negatives", it.negatives).put("restPauseReps", it.restPauseReps)
+                        .put("holdSec", it.holdSec).put("templateId", it.templateId))
+                }
+            })
+            .put("bodyWeights", JSONArray().apply {
+                bodyWeights.forEach {
+                    put(JSONObject().put("id", it.id).put("date", it.date).put("weightLbs", it.weightLbs.toDouble()))
                 }
             })
             .toString(2)
@@ -83,7 +92,8 @@ object BackupManager {
             val tIds = templates.map { it.id }.toSet()
 
             val links = root.optJSONArray("templateExercises").mapObjects { o, _ ->
-                TemplateExercise(o.getLong("templateId"), o.getLong("exerciseId"), o.optInt("sortOrder", 0))
+                TemplateExercise(o.getLong("templateId"), o.getLong("exerciseId"), o.optInt("sortOrder", 0),
+                    o.optBoolean("supersetNext", false))
             }.filter { it.templateId in tIds && it.exerciseId in exIds }
                 .distinctBy { it.templateId to it.exerciseId }
 
@@ -93,8 +103,16 @@ object BackupManager {
                     weight = o.getDouble("weight").toFloat(), reps = o.getInt("reps"),
                     notes = o.optString("notes", ""),
                     toFailure = o.optBoolean("toFailure", false), forcedReps = o.optInt("forcedReps", 0),
-                    durationSec = o.optInt("durationSec", 0), isWarmup = o.optBoolean("isWarmup", false))
+                    durationSec = o.optInt("durationSec", 0), isWarmup = o.optBoolean("isWarmup", false),
+                    negatives = o.optInt("negatives", 0), restPauseReps = o.optInt("restPauseReps", 0),
+                    holdSec = o.optInt("holdSec", 0),
+                    // A session's template only means something if that template came along too.
+                    templateId = o.optLong("templateId", 0L).takeIf { it in tIds } ?: 0L)
             }.filter { it.exerciseId in exIds }
+
+            val bodyWeights = root.optJSONArray("bodyWeights").mapObjects { o, _ ->
+                BodyWeight(id = o.getLong("id"), date = o.getLong("date"), weightLbs = o.getDouble("weightLbs").toFloat())
+            }
 
             db.withTransaction {
                 db.workoutDao().deleteAll()
@@ -102,11 +120,13 @@ object BackupManager {
                 db.templateDao().deleteAllTemplates()
                 db.prDao().deleteAll()
                 db.exerciseDao().deleteAll()
+                db.bodyWeightDao().deleteAll()
 
                 db.exerciseDao().insertAll(exercises)
                 if (templates.isNotEmpty()) db.templateDao().insertTemplates(templates)
                 if (links.isNotEmpty()) db.templateDao().insertTemplateExercises(links)
                 if (sets.isNotEmpty()) db.workoutDao().insertAll(sets)
+                if (bodyWeights.isNotEmpty()) db.bodyWeightDao().insertAll(bodyWeights)
             }
             return Summary(exercises.size, templates.size, sets.size, sets.map { it.sessionDate }.distinct().size)
         } catch (e: JSONException) {

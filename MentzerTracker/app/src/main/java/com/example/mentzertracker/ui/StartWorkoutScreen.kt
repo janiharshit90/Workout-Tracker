@@ -60,11 +60,16 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
     val introDismissed by vm.introDismissed.collectAsState()
 
     var showAddTemplate by remember { mutableStateOf(false) }
+    var showRoutines by remember { mutableStateOf(false) }
+    if (showRoutines) {
+        RoutinesDialog(onDismiss = { showRoutines = false }, onInstall = { key -> vm.installRoutine(key); showRoutines = false })
+    }
+    val templateIndex by vm.templateIndex.collectAsState()
     if (showAddTemplate) {
         AddTemplateDialog(
             exercises = allExercises,
             onDismiss = { showAddTemplate = false },
-            onConfirm = { name, ids -> vm.addTemplate(name, ids); showAddTemplate = false }
+            onConfirm = { name, ids, ss -> vm.addTemplate(name, ids, ss); showAddTemplate = false }
         )
     }
 
@@ -88,9 +93,6 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
     }
     val lastWorkout = history.firstOrNull()?.sessionDate
     val sessionsByDay = remember(history) { sessionsByDay(history) }
-    val templateIds = remember(templates, templateExercises) {
-        templates.map { templateExercises[it.id].orEmpty().toSet() }
-    }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -115,7 +117,7 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
 
         item {
             WeekStrip(
-                sessionsByDay = sessionsByDay, templateIds = templateIds,
+                sessionsByDay = sessionsByDay, templates = templateIndex,
                 lastWorkoutDate = lastWorkout, recoveryDays = recoveryDays
             )
         }
@@ -127,6 +129,7 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { SectionLabel("Choose a workout") }
+                TextButton(onClick = { showRoutines = true }) { Text("ROUTINES") }
                 TextButton(onClick = { showAddTemplate = true }) {
                     Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))

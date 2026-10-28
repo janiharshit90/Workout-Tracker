@@ -30,8 +30,16 @@ data class SetInput(
     /** Forced reps taken past failure with a spotter's help. Only meaningful when toFailure. */
     val forcedReps: Int = 0,
     /** Warm-up sets are logged but excluded from PRs and from the progression target. */
-    val isWarmup: Boolean = false
+    val isWarmup: Boolean = false,
+    /** Beyond-failure work (see [Technique]); like forced reps, only meaningful when toFailure. */
+    val negatives: Int = 0,
+    val restPauseReps: Int = 0,
+    val holdSec: Int = 0
 ) {
+    val beyond: BeyondFailure get() = BeyondFailure(forcedReps, negatives, restPauseReps, holdSec)
+    fun withBeyond(b: BeyondFailure) =
+        copy(forcedReps = b.forcedReps, negatives = b.negatives, restPauseReps = b.restPauseReps, holdSec = b.holdSec)
+
     val isEmpty: Boolean get() = weight.isBlank() && reps.isBlank()
     val isComplete: Boolean get() =
         parseWeight(weight)?.let { it >= 0f } == true && (reps.toIntOrNull() ?: 0) > 0
@@ -49,7 +57,11 @@ data class ActiveWorkout(
     val name: String,
     val exerciseIds: List<Long>,
     /** Midnight of the day being backfilled, or null for a normal workout happening now. */
-    val pastDate: Long? = null
+    val pastDate: Long? = null,
+    /** The template it was started from (null = custom); saved on the logged sets. */
+    val templateId: Long? = null,
+    /** Exercises done straight into the next one, no rest (pre-exhaust supersets). */
+    val supersets: Set<Long> = emptySet()
 )
 
 /**
@@ -61,7 +73,9 @@ data class WorkoutPreview(
     val name: String,
     val exerciseIds: List<Long>,
     /** Midnight of the day being backfilled, or null for a normal workout happening now. */
-    val pastDate: Long? = null
+    val pastDate: Long? = null,
+    /** Exercises done straight into the next one, no rest (pre-exhaust supersets). */
+    val supersets: Set<Long> = emptySet()
 )
 
 /** The most recent note written for an exercise. */
@@ -80,6 +94,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     private val workoutDao = db.workoutDao()
     private val prDao = db.prDao()
     private val templateDao = db.templateDao()
+    private val bodyWeightDao = db.bodyWeightDao()
     private val prefs = app.getSharedPreferences("mentzer_prefs", Context.MODE_PRIVATE)
 
     // ------------------------------------------------------------------
@@ -115,6 +130,20 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     val templateExercises: StateFlow<Map<Long, List<Long>>> = templateDao.observeAllTemplateExercises()
         .map { rows -> rows.groupBy { it.templateId }.mapValues { (_, l) -> l.sortedBy { it.sortOrder }.map { it.exerciseId } } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** templateId -> exercises in it that go straight into the next one (supersets). */
+    val templateSupersets: StateFlow<Map<Long, Set<Long>>> = templateDao.observeAllTemplateExercises()
+        .map { rows -> rows.filter { it.supersetNext }.groupBy { it.templateId }.mapValues { (_, l) -> l.map { it.exerciseId }.toSet() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** Templates in start-screen order, for naming past sessions (letters, calendar, sharing). */
+    val templateIndex: StateFlow<TemplateIndex> = combine(templates, templateExercises) { ts, ex ->
+        TemplateIndex(ts.map { it.id }, ts.map { it.name }, ts.map { ex[it.id].orEmpty().toSet() })
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TemplateIndex())
+
+    /** Body-weight log, oldest first (lbs). */
+    val bodyWeights: StateFlow<List<BodyWeight>> = bodyWeightDao.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ------------------------------------------------------------------
     // Today-screen state (persisted so a crash / app kill mid-workout loses nothing)
@@ -259,9 +288,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             }
             val existing = exerciseDao.getAllOnce().map { it.id }.toSet()
             val t = templateDao.getAllTemplatesOnce().firstOrNull { it.id == templateId } ?: return@launch
-            _preview.value = WorkoutPreview(
-                t.id, t.name, templateDao.getExerciseIdsForTemplate(templateId).filter { it in existing }, pastDate
-            )
+            val ids = templateDao.getExerciseIdsForTemplate(templateId).filter { it in existing }
+            val linked = templateDao.getAllTemplateExercisesOnce()
+                .filter { it.templateId == templateId && it.supersetNext }.map { it.exerciseId }.toSet()
+            _preview.value = WorkoutPreview(t.id, t.name, ids, pastDate, cleanSupersets(ids, linked))
         }
     }
 
@@ -274,7 +304,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
 
     fun previewRemove(exerciseId: Long) {
         val p = _preview.value ?: return
-        _preview.value = p.copy(exerciseIds = p.exerciseIds - exerciseId)
+        _preview.value = p.copy(
+            exerciseIds = p.exerciseIds - exerciseId,
+            supersets = supersetsWithout(p.exerciseIds, p.supersets, exerciseId)
+        )
     }
 
     /** Starts the previewed workout. This is the moment the clock starts. */
@@ -284,7 +317,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         setNotes(emptyMap())
         // A backfilled workout has no live clock: its date is the day you picked.
         setSessionStart(if (p.pastDate == null) System.currentTimeMillis() else null)
-        setActiveWorkout(ActiveWorkout(p.name, p.exerciseIds, p.pastDate))
+        setActiveWorkout(ActiveWorkout(p.name, p.exerciseIds, p.pastDate, p.templateId, cleanSupersets(p.exerciseIds, p.supersets)))
         _preview.value = null
     }
 
@@ -297,7 +330,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val w = _activeWorkout.value ?: return
         if (exerciseId in _inputs.value) setInputs(_inputs.value - exerciseId)
         if (exerciseId in _notes.value) setNotes(_notes.value - exerciseId)
-        setActiveWorkout(w.copy(exerciseIds = w.exerciseIds - exerciseId))
+        setActiveWorkout(w.copy(
+            exerciseIds = w.exerciseIds - exerciseId,
+            supersets = supersetsWithout(w.exerciseIds, w.supersets, exerciseId)
+        ))
     }
 
     /** Throws away the workout in progress (the UI confirms first). */
@@ -321,7 +357,11 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().apply {
             if (w == null) remove(PREF_ACTIVE) else putString(PREF_ACTIVE,
                 JSONObject().put("name", w.name).put("ids", JSONArray(w.exerciseIds))
-                    .apply { if (w.pastDate != null) put("past", w.pastDate) }.toString())
+                    .put("ss", JSONArray(w.supersets.toList()))
+                    .apply {
+                        if (w.pastDate != null) put("past", w.pastDate)
+                        if (w.templateId != null) put("tid", w.templateId)
+                    }.toString())
         }.apply()
     }
 
@@ -330,9 +370,12 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             prefs.getString(PREF_ACTIVE, null)?.let { raw ->
                 val o = JSONObject(raw)
                 val arr = o.getJSONArray("ids")
+                val ss = o.optJSONArray("ss")
                 return ActiveWorkout(
                     o.optString("name", "Workout"), List(arr.length()) { arr.getLong(it) },
-                    o.optLong("past", 0L).takeIf { it > 0L }
+                    o.optLong("past", 0L).takeIf { it > 0L },
+                    o.optLong("tid", 0L).takeIf { it > 0L },
+                    if (ss == null) emptySet() else List(ss.length()) { ss.getLong(it) }.toSet()
                 )
             }
         } catch (e: Exception) { /* fall through to draft adoption */ }
@@ -399,9 +442,9 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val cur = list[setIndex]
         // A set can't be both a warm-up and an all-out set.
         list[setIndex] = cur.copy(
-            toFailure = !cur.toFailure, forcedReps = if (cur.toFailure) 0 else cur.forcedReps,
+            toFailure = !cur.toFailure,
             isWarmup = if (cur.toFailure) cur.isWarmup else false
-        )
+        ).let { if (cur.toFailure) it.withBeyond(BeyondFailure()) else it }
         touchSession()
         setInputs(_inputs.value + (exerciseId to list.toList()))
     }
@@ -411,7 +454,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val list = currentSets(exerciseId).toMutableList()
         if (setIndex !in list.indices) return
         val cur = list[setIndex]
-        list[setIndex] = cur.copy(isWarmup = !cur.isWarmup, toFailure = false, forcedReps = 0)
+        list[setIndex] = cur.copy(isWarmup = !cur.isWarmup, toFailure = false).withBeyond(BeyondFailure())
         touchSession()
         setInputs(_inputs.value + (exerciseId to list.toList()))
     }
@@ -436,13 +479,16 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         }
     } catch (e: Exception) { emptyMap() }
 
-    /** +/- stepper for forced reps; only meaningful once a set is marked to failure. */
-    fun adjustForcedReps(exerciseId: Long, setIndex: Int, delta: Int) {
+    /**
+     * One tap of +/- on a beyond-failure technique ([direction] is +1 or -1; holds move in 5 s steps).
+     * Only meaningful once a set is marked to failure.
+     */
+    fun adjustTechnique(exerciseId: Long, setIndex: Int, technique: Technique, direction: Int) {
         val list = currentSets(exerciseId).toMutableList()
         if (setIndex !in list.indices) return
         val cur = list[setIndex]
         if (!cur.toFailure) return
-        list[setIndex] = cur.copy(forcedReps = (cur.forcedReps + delta).coerceIn(0, MAX_FORCED_REPS))
+        list[setIndex] = cur.withBeyond(cur.beyond.nudge(technique, direction))
         touchSession()
         setInputs(_inputs.value + (exerciseId to list.toList()))
     }
@@ -510,6 +556,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                 val unit = _weightUnit.value
                 val now = System.currentTimeMillis()
                 val past = _activeWorkout.value?.pastDate
+                val templateId = _activeWorkout.value?.templateId ?: 0L
                 // A backfilled workout lands on the chosen day, at the current time of day so two
                 // backfilled sessions never share a timestamp (sets are grouped by it).
                 val sessionDate = if (past != null) past + (now - startOfDay(now)) else now
@@ -537,7 +584,11 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                                     toFailure = s.toFailure, forcedReps = if (s.toFailure) s.forcedReps else 0,
                                     durationSec = durationSec,
                                     // One-set Heavy Duty has no warm-up rows, so ignore a stale flag.
-                                    isWarmup = !heavy && s.isWarmup
+                                    isWarmup = !heavy && s.isWarmup,
+                                    negatives = if (s.toFailure) s.negatives else 0,
+                                    restPauseReps = if (s.toFailure) s.restPauseReps else 0,
+                                    holdSec = if (s.toFailure) s.holdSec else 0,
+                                    templateId = templateId
                                 )
                             }
                         }
@@ -575,7 +626,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                         val top = mine.filter { !it.isWarmup }.map { TopSet(it.weight, it.reps) }.best()
                         ExerciseSummary(
                             exerciseId = exId, name = ex.name,
-                            sets = mine.map { SummarySet(it.weight, it.reps, it.toFailure, it.forcedReps, it.isWarmup) },
+                            sets = mine.map {
+                                SummarySet(it.weight, it.reps, it.toFailure,
+                                    BeyondFailure(it.forcedReps, it.negatives, it.restPauseReps, it.holdSec), it.isWarmup)
+                            },
                             top = top,
                             // PR / "vs last time" only make sense for a workout happening now.
                             isPr = past == null && top != null && beatsBest(previousBest[exId]?.let { TopSet(it.weight, it.reps) }, top),
@@ -588,7 +642,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                     name = _activeWorkout.value?.name ?: "Workout",
                     durationSec = durationSec,
                     exercises = summaryExercises,
-                    skippedIncomplete = incomplete
+                    skippedIncomplete = incomplete,
+                    date = sessionDate
                 )
 
                 RestTimer.stop(ctx)
@@ -632,17 +687,20 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateLoggedSet(
         setId: Long, weightText: String, repsText: String,
-        toFailure: Boolean, forcedReps: Int, isWarmup: Boolean, notes: String
+        toFailure: Boolean, beyond: BeyondFailure, isWarmup: Boolean, notes: String
     ) {
         viewModelScope.launch {
             val set = workoutDao.getSetById(setId) ?: return@launch
             val w = parseWeight(weightText)
             val r = repsText.toIntOrNull()
             if (w == null || w < 0f || r == null || r <= 0) { postEvent("Enter a valid weight and reps"); return@launch }
+            val failure = toFailure && !isWarmup
+            val b = if (failure) beyond else BeyondFailure()
             workoutDao.updateSet(set.copy(
                 weight = displayToLbs(w, _weightUnit.value), reps = r,
-                toFailure = toFailure && !isWarmup,
-                forcedReps = if (toFailure && !isWarmup) forcedReps.coerceIn(0, MAX_FORCED_REPS) else 0,
+                toFailure = failure,
+                forcedReps = b.forcedReps.coerceIn(0, MAX_FORCED_REPS),
+                negatives = b.negatives, restPauseReps = b.restPauseReps, holdSec = b.holdSec,
                 isWarmup = isWarmup,
                 notes = notes.trim().take(MAX_NOTE_LENGTH)
             ))
@@ -711,9 +769,15 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             if (id in _inputs.value) setInputs(_inputs.value - id)
             if (id in _notes.value) setNotes(_notes.value - id)
             _activeWorkout.value?.let { w ->
-                if (id in w.exerciseIds) setActiveWorkout(w.copy(exerciseIds = w.exerciseIds - id))
+                if (id in w.exerciseIds) setActiveWorkout(w.copy(
+                    exerciseIds = w.exerciseIds - id, supersets = supersetsWithout(w.exerciseIds, w.supersets, id)
+                ))
             }
-            _preview.value?.let { p -> if (id in p.exerciseIds) _preview.value = p.copy(exerciseIds = p.exerciseIds - id) }
+            _preview.value?.let { p ->
+                if (id in p.exerciseIds) _preview.value = p.copy(
+                    exerciseIds = p.exerciseIds - id, supersets = supersetsWithout(p.exerciseIds, p.supersets, id)
+                )
+            }
             postEvent("Exercise deleted")
         }
     }
@@ -722,7 +786,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     // Templates
     // ==================================================================
 
-    fun addTemplate(name: String, exerciseIds: List<Long>) {
+    fun addTemplate(name: String, exerciseIds: List<Long>, supersets: Set<Long> = emptySet()) {
         viewModelScope.launch {
             val trimmed = name.trim()
             if (trimmed.isEmpty()) { postEvent("Template name can't be empty"); return@launch }
@@ -733,15 +797,13 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             db.withTransaction {
                 val nextOrder = (templateDao.maxSortOrder() ?: -1) + 1
                 val templateId = templateDao.insertTemplate(WorkoutTemplate(name = trimmed, sortOrder = nextOrder))
-                templateDao.insertTemplateExercises(
-                    exerciseIds.distinct().mapIndexed { idx, exId -> TemplateExercise(templateId, exId, idx) }
-                )
+                templateDao.insertTemplateExercises(templateRows(templateId, exerciseIds, supersets))
             }
             postEvent("Created template \"$trimmed\"")
         }
     }
 
-    fun updateTemplate(id: Long, name: String, exerciseIds: List<Long>) {
+    fun updateTemplate(id: Long, name: String, exerciseIds: List<Long>, supersets: Set<Long> = emptySet()) {
         viewModelScope.launch {
             val trimmed = name.trim()
             if (trimmed.isEmpty()) { postEvent("Template name can't be empty"); return@launch }
@@ -753,11 +815,52 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             db.withTransaction {
                 templateDao.renameTemplate(id, trimmed)
                 templateDao.clearTemplateExercises(id)
-                templateDao.insertTemplateExercises(
-                    exerciseIds.distinct().mapIndexed { idx, exId -> TemplateExercise(id, exId, idx) }
-                )
+                templateDao.insertTemplateExercises(templateRows(id, exerciseIds, supersets))
             }
             postEvent("Updated \"$trimmed\"")
+        }
+    }
+
+    private fun templateRows(templateId: Long, exerciseIds: List<Long>, supersets: Set<Long>): List<TemplateExercise> {
+        val ids = exerciseIds.distinct()
+        val linked = cleanSupersets(ids, supersets)
+        return ids.mapIndexed { idx, exId -> TemplateExercise(templateId, exId, idx, supersetNext = exId in linked) }
+    }
+
+    /**
+     * Adds a ready-made routine: creates the exercises it needs (reusing ones with the same name)
+     * and one template per workout, with its supersets linked. Templates whose name is taken are skipped.
+     */
+    fun installRoutine(key: String) {
+        val routine = ROUTINES.firstOrNull { it.key == key } ?: return
+        viewModelScope.launch {
+            var created = 0
+            var skipped: List<String> = emptyList()
+            db.withTransaction {
+                val existing = exerciseDao.getAllOnce()
+                val plan = planRoutine(routine, existing.map { it.name }, templateDao.getAllTemplatesOnce().map { it.name })
+                skipped = plan.skippedWorkouts
+                var nextEx = (exerciseDao.maxSortOrder() ?: -1) + 1
+                if (plan.newExercises.isNotEmpty()) {
+                    exerciseDao.insertAll(plan.newExercises.map { slot ->
+                        Exercise(name = slot.exercise, cue = slot.cue, sortOrder = nextEx++, stepLbs = slot.stepLbs)
+                    })
+                }
+                val byName = exerciseDao.getAllOnce().associateBy { it.name.trim().lowercase() }
+                var nextT = (templateDao.maxSortOrder() ?: -1) + 1
+                plan.newWorkouts.forEach { w ->
+                    val ids = w.slots.mapNotNull { byName[it.exercise.lowercase()]?.id }
+                    val linked = w.slots.filter { it.supersetNext }.mapNotNull { byName[it.exercise.lowercase()]?.id }.toSet()
+                    val tId = templateDao.insertTemplate(WorkoutTemplate(name = w.name, sortOrder = nextT++))
+                    templateDao.insertTemplateExercises(templateRows(tId, ids, linked))
+                    created++
+                }
+            }
+            postEvent(when {
+                created == 0 -> "You already have the ${routine.title} workouts"
+                skipped.isEmpty() -> "Added ${routine.title}: $created workouts"
+                else -> "Added $created workouts (kept your existing ${skipped.joinToString()})"
+            })
         }
     }
 
@@ -825,6 +928,50 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     fun stopTimer() = RestTimer.stop(ctx)
 
     // ==================================================================
+    // Body weight
+    // ==================================================================
+
+    /** Logs a body-weight reading (in the display unit) for now. */
+    fun logBodyWeight(text: String) {
+        val w = parseWeight(text)
+        if (w == null || w <= 0f || w > 1500f) { postEvent("Enter a valid body weight"); return }
+        viewModelScope.launch {
+            bodyWeightDao.insert(BodyWeight(date = System.currentTimeMillis(), weightLbs = displayToLbs(w, _weightUnit.value)))
+            postEvent("Body weight logged")
+        }
+    }
+
+    fun deleteBodyWeight(id: Long) {
+        viewModelScope.launch {
+            val entry = bodyWeightDao.getById(id) ?: return@launch
+            bodyWeightDao.deleteById(id)
+            postEvent("Entry deleted", "Undo") { viewModelScope.launch { bodyWeightDao.insertAll(listOf(entry)) } }
+        }
+    }
+
+    // ==================================================================
+    // Sharing
+    // ==================================================================
+
+    /** A logged session rebuilt as a summary (PRs judged against what came before it). */
+    fun sessionSummary(sessionDate: Long): WorkoutSummary? {
+        val all = history.value
+        val sets = all.filter { it.sessionDate == sessionDate }
+        if (sets.isEmpty()) return null
+        val info = sessionsByDay(sets).values.flatten().firstOrNull() ?: return null
+        val name = templateIndex.value.indexOf(info)?.let { templateIndex.value.names.getOrNull(it) } ?: "Workout"
+        return summarizeSession(sessionDate, name, all)
+    }
+
+    /** Draws [summary] as an image in the share cache; null (with a message) if that fails. */
+    suspend fun summaryImage(summary: WorkoutSummary): File? = try {
+        withContext(Dispatchers.Default) { ShareCard.writePng(ctx, summary, _weightUnit.value) }
+    } catch (e: Exception) {
+        postEvent("Couldn't create the image: ${e.message}")
+        null
+    }
+
+    // ==================================================================
     // Export / backup / restore
     // ==================================================================
 
@@ -837,13 +984,14 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
             val file = File(dir, "mentzer_history_${formatDate(System.currentTimeMillis(), "yyyyMMdd")}.csv")
             file.bufferedWriter().use { w ->
-                w.append("Date,Exercise,Set,Weight (${unit.label}),Reps,To failure,Forced reps,Warm-up,Est. 1RM (${unit.label}),Session (min),Notes\n")
+                w.append("Date,Exercise,Set,Weight (${unit.label}),Reps,To failure,Forced reps,Negatives,Rest-pause reps,Static hold (s),Warm-up,Est. 1RM (${unit.label}),Session (min),Notes\n")
                 rows.forEach { r ->
                     val weight = lbsToDisplay(r.weight, unit)
                     w.append(listOf(
                         formatDate(r.sessionDate, "yyyy-MM-dd HH:mm"),
                         r.exerciseName, r.setNumber.toString(), formatWeight(weight), r.reps.toString(),
                         if (r.toFailure) "yes" else "no", r.forcedReps.toString(),
+                        r.negatives.toString(), r.restPauseReps.toString(), r.holdSec.toString(),
                         if (r.isWarmup) "yes" else "no",
                         formatWeight(estimated1RM(weight, r.reps)),
                         if (r.durationSec > 0) (r.durationSec / 60).toString() else "", r.notes
@@ -903,7 +1051,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
         val o = JSONObject()
         map.forEach { (id, sets) ->
             o.put(id.toString(), JSONArray().apply {
-                sets.forEach { put(JSONArray().put(it.weight).put(it.reps).put(it.toFailure).put(it.forcedReps).put(it.isWarmup)) }
+                sets.forEach {
+                    put(JSONArray().put(it.weight).put(it.reps).put(it.toFailure).put(it.forcedReps).put(it.isWarmup)
+                        .put(it.negatives).put(it.restPauseReps).put(it.holdSec))
+                }
             })
         }
         prefs.edit().putString(PREF_DRAFT, o.toString()).apply()
@@ -919,7 +1070,8 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                     put(k.toLong(), List(arr.length()) { i ->
                         val p = arr.getJSONArray(i)
                         // optBoolean/optInt default gracefully for drafts saved before v4.
-                        SetInput(p.optString(0, ""), p.optString(1, ""), p.optBoolean(2, false), p.optInt(3, 0), p.optBoolean(4, false))
+                        SetInput(p.optString(0, ""), p.optString(1, ""), p.optBoolean(2, false), p.optInt(3, 0), p.optBoolean(4, false),
+                            p.optInt(5, 0), p.optInt(6, 0), p.optInt(7, 0))
                     })
                 }
             }
