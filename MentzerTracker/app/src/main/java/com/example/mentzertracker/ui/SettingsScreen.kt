@@ -123,7 +123,7 @@ fun SettingsScreen(
             SettingsSection("Heavy Duty") {
                 SwitchRow(
                     "Track training to failure",
-                    "Adds a per-set toggle for true failure, plus a forced-reps counter",
+                    "Adds a per-set toggle for true failure, plus forced reps, negatives, rest-pause and holds",
                     trackFailure, vm::setTrackFailure
                 )
                 Spacer(Modifier.height(10.dp))

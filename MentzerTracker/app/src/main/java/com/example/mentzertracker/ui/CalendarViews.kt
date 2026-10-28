@@ -25,8 +25,8 @@ import com.example.mentzertracker.util.*
 private val WEEKDAYS = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 
 /** What a session on a given day was, as a template letter (or "•" for a custom mix). */
-private fun letterFor(session: SessionInfo, templateIds: List<Set<Long>>): String =
-    matchTemplate(session.exerciseIds, templateIds)?.let { templateLetter(it) } ?: "•"
+private fun letterFor(session: SessionInfo, templates: TemplateIndex): String =
+    templates.indexOf(session)?.let { templateLetter(it) } ?: "•"
 
 /**
  * This week at a glance, Monday to Sunday: workouts you did (template letter), rest days, today,
@@ -36,7 +36,7 @@ private fun letterFor(session: SessionInfo, templateIds: List<Set<Long>>): Strin
 @Composable
 fun WeekStrip(
     sessionsByDay: Map<Long, List<SessionInfo>>,
-    templateIds: List<Set<Long>>,
+    templates: TemplateIndex,
     lastWorkoutDate: Long?,
     recoveryDays: Int,
     modifier: Modifier = Modifier
@@ -62,7 +62,7 @@ fun WeekStrip(
                 val future = day > today
                 val ready = !done && day >= readyDay && day >= today
                 val caption = when {
-                    done -> letterFor(sessions.first(), templateIds)
+                    done -> letterFor(sessions.first(), templates)
                     ready -> "READY"
                     else -> "REST"
                 }
@@ -106,8 +106,7 @@ fun WeekStrip(
 @Composable
 fun CalendarPanel(
     sessionsByDay: Map<Long, List<SessionInfo>>,
-    templateNames: List<String>,
-    templateIds: List<Set<Long>>,
+    templates: TemplateIndex,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -176,13 +175,13 @@ fun CalendarPanel(
                 style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
         }
         sessions.forEach { s ->
-            val idx = matchTemplate(s.exerciseIds, templateIds)
+            val idx = templates.indexOf(s)
             Column(
                 Modifier.fillMaxWidth().clip(IronShape).background(scheme.surface)
                     .border(1.dp, scheme.outlineVariant, IronShape).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                Text((idx?.let { "${templateLetter(it)} · ${templateNames[it]}" } ?: "Custom workout").uppercase(),
+                Text((idx?.let { "${templateLetter(it)} · ${templates.names[it]}" } ?: "Custom workout").uppercase(),
                     style = MaterialTheme.typography.titleMedium, color = scheme.primary)
                 Text(
                     formatDate(s.date, "h:mm a") + " · ${s.exerciseNames.size} exercises · ${s.sets} sets" +

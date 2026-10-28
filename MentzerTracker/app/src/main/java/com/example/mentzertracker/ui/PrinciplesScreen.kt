@@ -6,6 +6,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Warning
@@ -46,6 +48,21 @@ private val PRINCIPLES = listOf(
         "Sessions built around a small number of maximally hard sets should be short. If " +
         "you're regularly training for over an hour, that's usually a sign the effort per " +
         "set could be higher, or there's more volume than needed."
+    ),
+    Principle(
+        Icons.Filled.Whatshot, "Going beyond failure - sparingly",
+        "Once a set hits failure, a few techniques can push it further: forced reps (a partner " +
+        "helps just enough), negatives (a partner lifts, you lower slowly), rest-pause (rack it, " +
+        "breathe 10-20 seconds, squeeze out a couple more) and static holds. They're powerful and " +
+        "very taxing, so use one at a time and not every workout. The app logs them separately, " +
+        "so they never inflate your reps, PRs or targets."
+    ),
+    Principle(
+        Icons.Filled.Link, "Pre-exhaust: isolation, then straight into a compound",
+        "In a compound lift the smaller muscles often give out before the big one is worked hard. " +
+        "Doing an isolation move first (say, pec deck) and going straight into a compound (incline " +
+        "press) with no rest lets the target muscle reach failure. Link two exercises as a superset " +
+        "in a template and the workout will tell you to skip the rest between them."
     ),
     Principle(
         Icons.Filled.TrendingUp, "Progress is the only proof it's working",

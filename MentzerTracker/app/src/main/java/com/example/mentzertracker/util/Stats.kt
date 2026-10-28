@@ -1,5 +1,7 @@
 package com.example.mentzertracker.util
 
+import com.example.mentzertracker.data.SetWithExercise
+
 /** The set that represents an exercise in a session: the heaviest, ties broken by more reps. */
 data class TopSet(val weight: Float, val reps: Int)
 
@@ -46,7 +48,7 @@ fun Change.describe(unit: WeightUnit): String = when (kind) {
 
 data class SummarySet(
     val weightLbs: Float, val reps: Int,
-    val toFailure: Boolean, val forcedReps: Int, val isWarmup: Boolean
+    val toFailure: Boolean, val beyond: BeyondFailure, val isWarmup: Boolean
 )
 
 data class ExerciseSummary(
@@ -66,8 +68,43 @@ data class WorkoutSummary(
     /** 0 = unknown. */
     val durationSec: Int,
     val exercises: List<ExerciseSummary>,
-    val skippedIncomplete: Int
+    val skippedIncomplete: Int,
+    /** When the session happened (its sessionDate). */
+    val date: Long = 0L
 ) {
     val workingSets: Int get() = exercises.sumOf { ex -> ex.sets.count { !it.isWarmup } }
     val prCount: Int get() = exercises.count { it.isPr }
+}
+
+/**
+ * Rebuilds the summary of an already-logged session from history, judged against what came before
+ * it (so an old session shows the PRs it set at the time). Used to share past workouts.
+ *
+ * @param history all logged sets, any order.
+ */
+fun summarizeSession(date: Long, name: String, history: List<SetWithExercise>): WorkoutSummary? {
+    val session = history.filter { it.sessionDate == date }
+    if (session.isEmpty()) return null
+    val exercises = session.groupBy { it.exerciseId }.map { (exId, sets) ->
+        val working = sets.filter { !it.isWarmup }
+        val top = working.map { TopSet(it.weight, it.reps) }.best()
+        val earlier = history.filter { it.exerciseId == exId && !it.isWarmup && it.sessionDate < date }
+        val previousBest = earlier.map { TopSet(it.weight, it.reps) }.best()
+        val previousTop = earlier.maxOfOrNull { it.sessionDate }?.let { last ->
+            earlier.filter { it.sessionDate == last }.map { TopSet(it.weight, it.reps) }.best()
+        }
+        ExerciseSummary(
+            exerciseId = exId,
+            name = sets.first().exerciseName,
+            sets = sets.sortedBy { it.setNumber }.map {
+                SummarySet(it.weight, it.reps, it.toFailure,
+                    BeyondFailure(it.forcedReps, it.negatives, it.restPauseReps, it.holdSec), it.isWarmup)
+            },
+            top = top,
+            isPr = top != null && beatsBest(previousBest, top),
+            change = top?.let { compareToLast(previousTop, it) },
+            note = sets.firstOrNull { it.notes.isNotBlank() }?.notes.orEmpty()
+        )
+    }
+    return WorkoutSummary(name, session.maxOf { it.durationSec }, exercises, 0, date)
 }

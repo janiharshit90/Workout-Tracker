@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
@@ -33,7 +34,7 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit, onGoToTo
     val history by vm.history.collectAsState()
     val unit by vm.weightUnit.collectAsState()
     val templates by vm.templates.collectAsState()
-    val templateExercises by vm.templateExercises.collectAsState()
+    val templateIndex by vm.templateIndex.collectAsState()
     var calendarMode by rememberSaveable { mutableStateOf(false) }
     var pickingDate by remember { mutableStateOf(false) }
     var pastDay by remember { mutableStateOf<Long?>(null) }
@@ -57,7 +58,7 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit, onGoToTo
             initialWeight = formatWeight(lbsToDisplay(s.weight, unit)),
             initialReps = s.reps.toString(),
             initialToFailure = s.toFailure,
-            initialForcedReps = s.forcedReps,
+            initialBeyond = BeyondFailure(s.forcedReps, s.negatives, s.restPauseReps, s.holdSec),
             initialWarmup = s.isWarmup,
             initialNotes = s.notes,
             unitLabel = unit.label,
@@ -69,6 +70,13 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit, onGoToTo
 
     // history is newest-first; groupBy keeps that order.
     val sessions = remember(history) { history.groupBy { it.sessionDate }.toList() }
+    val infoByDate = remember(history) { sessionsByDay(history).values.flatten().associateBy { it.date } }
+    fun shareSession(date: Long) {
+        scope.launch {
+            val summary = vm.sessionSummary(date) ?: return@launch
+            vm.summaryImage(summary)?.let { shareFile(ctx, it, "image/png", "Share workout") }
+        }
+    }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -102,11 +110,7 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit, onGoToTo
         if (calendarMode && sessions.isNotEmpty()) {
             item {
                 val byDay = remember(history) { sessionsByDay(history) }
-                CalendarPanel(
-                    sessionsByDay = byDay,
-                    templateNames = templates.map { it.name },
-                    templateIds = templates.map { templateExercises[it.id].orEmpty().toSet() }
-                )
+                CalendarPanel(sessionsByDay = byDay, templates = templateIndex)
             }
             return@LazyColumn
         }
@@ -120,6 +124,9 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit, onGoToTo
                 val volume = sets.sumOf { (lbsToDisplay(it.weight, unit) * it.reps).toDouble() }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     Column(Modifier.weight(1f)) {
+                        infoByDate[date]?.let { info ->
+                            Text(templateIndex.nameOf(info).uppercase(), style = MaterialTheme.typography.titleMedium)
+                        }
                         Text(formatDate(date, "EEE, MMM d yyyy \u00b7 h:mm a"),
                             style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary)
@@ -143,6 +150,9 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit, onGoToTo
                                 )
                             }
                         }
+                    }
+                    IconButton(onClick = { shareSession(date) }) {
+                        Icon(Icons.Filled.IosShare, "Share this workout as an image")
                     }
                     IconButton(onClick = { vm.deleteSession(date) }) {
                         Icon(Icons.Filled.Delete, "Delete session")
@@ -185,8 +195,9 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit, onGoToTo
                                 if (s.toFailure) {
                                     Icon(Icons.Filled.LocalFireDepartment, "To failure",
                                         Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
-                                    if (s.forcedReps > 0) {
-                                        Text(" +${s.forcedReps}", style = MaterialTheme.typography.labelSmall,
+                                    val beyond = BeyondFailure(s.forcedReps, s.negatives, s.restPauseReps, s.holdSec)
+                                    if (!beyond.isEmpty) {
+                                        Text(" " + beyond.describe(), style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.error)
                                     }
                                 }

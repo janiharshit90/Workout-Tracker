@@ -37,12 +37,12 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.example.mentzertracker"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.mentzertracker"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
         buildConfigField("String", "UPDATE_REPO", "\"$updateRepo\"")

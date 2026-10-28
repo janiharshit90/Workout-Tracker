@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -148,7 +149,9 @@ fun WorkoutPreviewScreen(vm: WorkoutViewModel, preview: WorkoutPreview) {
                 val suggestion = suggestions[ex.id]
                 val daysSince = last?.firstOrNull()?.sessionDate?.let { daysAgo(it) }
                 val recoveringLeft = daysSince?.let { (recoveryDays - it).coerceAtLeast(0) } ?: 0
+                val linked = linksToNext(preview.exerciseIds, preview.supersets, ex.id)
 
+                Column {
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -203,6 +206,15 @@ fun WorkoutPreviewScreen(vm: WorkoutViewModel, preview: WorkoutPreview) {
                     IconButton(onClick = { vm.previewRemove(ex.id) }) {
                         Icon(Icons.Filled.Close, "Remove ${ex.name} from this workout", tint = scheme.onSurfaceVariant)
                     }
+                }
+                if (linked) {
+                    Row(Modifier.padding(start = 14.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Link, null, Modifier.size(14.dp), tint = scheme.primary)
+                        Spacer(Modifier.width(6.dp))
+                        Text("SUPERSET · NO REST INTO THE NEXT ONE", style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, color = scheme.primary)
+                    }
+                }
                 }
             }
 

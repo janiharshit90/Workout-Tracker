@@ -1,13 +1,19 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.example.mentzertracker
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
@@ -32,6 +38,12 @@ class MainActivity : ComponentActivity() {
     private val updateVm: UpdateViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Draw behind the status and navigation bars on every Android version (Android 15 forces this
+        // for apps targeting API 35). The Scaffold below pads content by the bar and keyboard insets.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
         super.onCreate(savedInstanceState)
         // Only on a fresh launch, not on rotation / process restore.
         if (savedInstanceState == null) updateVm.checkOnLaunch()
@@ -44,7 +56,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 private val TABS = listOf(
     Tab("today", "Today", Icons.Filled.FitnessCenter),
     Tab("history", "History", Icons.Filled.History),
-    Tab("prs", "PRs", Icons.Filled.EmojiEvents),
+    Tab("stats", "Stats", Icons.Filled.Insights),
     Tab("settings", "Settings", Icons.Filled.Settings)
 )
 private val MAIN_ROUTES = TABS.map { it.route }.toSet()
@@ -123,7 +135,8 @@ fun AppRoot(vm: WorkoutViewModel, updateVm: UpdateViewModel) {
             }
         }
     ) { pad ->
-        NavHost(nav, startDestination = "today", modifier = Modifier.padding(pad)) {
+        // consumeWindowInsets stops the keyboard padding from double-counting the nav bar already in [pad].
+        NavHost(nav, startDestination = "today", modifier = Modifier.padding(pad).consumeWindowInsets(pad).imePadding()) {
             composable("today") {
                 TodayScreen(vm, onOpenProgress = openProgress, onOpenPrinciples = { nav.navigate("principles") })
             }
@@ -136,7 +149,7 @@ fun AppRoot(vm: WorkoutViewModel, updateVm: UpdateViewModel) {
                     }
                 })
             }
-            composable("prs") { PRsScreen(vm, onExerciseClick = openProgress) }
+            composable("stats") { StatsScreen(vm, onExerciseClick = openProgress) }
             composable("settings") {
                 SettingsScreen(
                     vm = vm,

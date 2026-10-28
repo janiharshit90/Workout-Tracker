@@ -34,7 +34,10 @@ data class WorkoutTemplate(
 data class TemplateExercise(
     val templateId: Long,
     val exerciseId: Long,
-    val sortOrder: Int
+    val sortOrder: Int,
+    // Added in v7 (see MIGRATION_6_7). Done back-to-back with the NEXT exercise in the template,
+    // with no rest in between (Heavy Duty pre-exhaust: isolation move straight into a compound).
+    val supersetNext: Boolean = false
 )
 
 @Entity(
@@ -59,7 +62,25 @@ data class WorkoutSet(
     val durationSec: Int = 0,
     // Added in v6 (see MIGRATION_5_6). Warm-up sets are logged but never count toward PRs,
     // "last time" or the progression target.
-    val isWarmup: Boolean = false
+    val isWarmup: Boolean = false,
+    // Added in v7 (see MIGRATION_6_7). "Beyond failure" work done after the set hit failure.
+    // Like forced reps, none of these count toward reps, PRs or progression.
+    /** Extra lowering-only reps after failure (a partner lifts, you lower slowly). */
+    val negatives: Int = 0,
+    /** Extra reps squeezed out after a short (10-20 s) pause at failure. */
+    val restPauseReps: Int = 0,
+    /** Seconds held in the strongest position at failure (static hold). */
+    val holdSec: Int = 0,
+    /** Which template this session was started from, stored on every set; 0 = custom / unknown. */
+    val templateId: Long = 0
+)
+
+/** A body-weight reading. Stored in lbs like every other weight. */
+@Entity(tableName = "body_weights", indices = [Index("date")])
+data class BodyWeight(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val date: Long,
+    val weightLbs: Float
 )
 
 @Entity(tableName = "personal_records",
@@ -79,7 +100,11 @@ data class SetWithExercise(
     val reps: Int, val notes: String,
     val toFailure: Boolean = false, val forcedReps: Int = 0,
     val durationSec: Int = 0,
-    val isWarmup: Boolean = false
+    val isWarmup: Boolean = false,
+    val negatives: Int = 0,
+    val restPauseReps: Int = 0,
+    val holdSec: Int = 0,
+    val templateId: Long = 0
 )
 
 data class PRWithExercise(

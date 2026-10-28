@@ -44,7 +44,9 @@ data class SessionInfo(
     val exerciseIds: Set<Long>,
     val exerciseNames: List<String>,
     val sets: Int,
-    val durationSec: Int
+    val durationSec: Int,
+    /** Template the session was started from (0 = custom, or logged before this was recorded). */
+    val templateId: Long = 0
 )
 
 /** Sessions grouped by the day they happened (key = midnight), each day's sessions oldest first. */
@@ -55,7 +57,8 @@ fun sessionsByDay(history: List<SetWithExercise>): Map<Long, List<SessionInfo>> 
             exerciseIds = sets.map { it.exerciseId }.toSet(),
             exerciseNames = sets.distinctBy { it.exerciseId }.map { it.exerciseName },
             sets = sets.count { !it.isWarmup },
-            durationSec = sets.maxOf { it.durationSec }
+            durationSec = sets.maxOf { it.durationSec },
+            templateId = sets.maxOf { it.templateId }
         )
     }.groupBy { startOfDay(it.date) }.mapValues { (_, l) -> l.sortedBy { it.date } }
 
@@ -73,6 +76,25 @@ fun matchTemplate(sessionExerciseIds: Set<Long>, templateExerciseIds: List<Set<L
         if (score >= bestScore && (best == null || score > bestScore)) { best = i; bestScore = score }
     }
     return best
+}
+
+/**
+ * The templates in start-screen order, for naming past sessions. A session that recorded its
+ * template is named by it; older ones (and ones whose template was deleted) fall back to
+ * [matchTemplate].
+ */
+data class TemplateIndex(
+    val ids: List<Long> = emptyList(),
+    val names: List<String> = emptyList(),
+    val exerciseIds: List<Set<Long>> = emptyList()
+) {
+    /** Position of the session's template, or null for a custom mix. */
+    fun indexOf(session: SessionInfo): Int? =
+        ids.indexOf(session.templateId).takeIf { session.templateId > 0 && it >= 0 }
+            ?: matchTemplate(session.exerciseIds, exerciseIds)
+
+    /** "Day A - Full Body", or "Custom workout". */
+    fun nameOf(session: SessionInfo): String = indexOf(session)?.let { names.getOrNull(it) } ?: "Custom workout"
 }
 
 /** The letter shown for template number [index] (A, B, ...), matching the start screen. */
