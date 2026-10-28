@@ -10,6 +10,7 @@ import org.json.JSONObject
  * or moving to a differently-signed build.
  */
 object BackupManager {
+    // Kept from the app's original name on purpose: backups made before the rename to Rarelift must still restore.
     private const val APP_TAG = "MentzerTracker"
     private const val FORMAT = 1
 
@@ -73,7 +74,7 @@ object BackupManager {
         val root = try { JSONObject(text) } catch (e: JSONException) {
             throw BackupException("That file isn't a valid backup.")
         }
-        if (root.optString("app") != APP_TAG) throw BackupException("That file isn't a Mentzer Tracker backup.")
+        if (root.optString("app") != APP_TAG) throw BackupException("That file isn't a Rarelift backup.")
         if (root.optInt("format", 0) > FORMAT) throw BackupException("This backup is from a newer app version. Update the app first.")
 
         try {

@@ -40,7 +40,9 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.mentzertracker"
+        // The app's identity on Android and Google Play. It can never change once published on Play.
+        // (The code package below, com.example.mentzertracker, is internal and doesn't matter.)
+        applicationId = "com.rarelift.app"
         minSdk = 24
         targetSdk = 35
         versionCode = appVersionCode

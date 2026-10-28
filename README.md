@@ -1,6 +1,7 @@
-# Mentzer Tracker
+# Rarelift
 
-A workout tracker for Android built around Mike Mentzer's **Heavy Duty** training: one all-out set per
+*Lift hard. Lift rarely.* A workout tracker for Android built around high-intensity training in the
+style of Mike Mentzer's Heavy Duty: one all-out set per
 exercise, taken to failure, then enough rest to actually recover. It does the bookkeeping so you can
 focus on the set: what to beat today, when you're recovered, when a lift has stalled, and whether
 you're getting stronger.
@@ -31,9 +32,17 @@ you're getting stronger.
 
 ## Install
 
-Grab the latest `MentzerTracker-x.y.z.apk` from
+Grab the latest `Rarelift-x.y.z.apk` from
 [Releases](https://github.com/janiharshit90/Workout-Tracker/releases) and open it on the phone
 (Android 7.0+). After that the app checks for updates itself and installs them in a tap.
+
+### Coming from "Mentzer Tracker"?
+Version 2.0 gave the app a new name and a new identity on Android (`com.rarelift.app`), so Android treats
+it as a different app and the old one can't update into it. Move over once, by hand:
+1. In the old app: **Settings → Back up data**, save the file.
+2. Install `Rarelift-2.x.x.apk` from Releases. It installs alongside the old app.
+3. In Rarelift: **Settings → Restore from backup**, pick the file.
+4. Check your history is there, then uninstall the old app. Rarelift updates itself from then on.
 
 ## Releasing a new version
 
