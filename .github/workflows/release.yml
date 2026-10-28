@@ -79,15 +79,24 @@ jobs:
             echo "keyPassword=$KEY_PASSWORD"
           } > MentzerTracker/keystore.properties
 
-      - name: Build signed release APK
+      # GitHub edition -> signed APK on the GitHub Release (what the in-app updater installs).
+      # Play edition    -> signed App Bundle (.aab) to upload in Play Console, kept as a workflow artifact.
+      - name: Build signed release APK and Play bundle
         working-directory: MentzerTracker
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon -PappVersionName="${{ steps.ver.outputs.version }}"
+          ./gradlew assembleGithubRelease bundlePlayRelease --no-daemon -PappVersionName="${{ steps.ver.outputs.version }}"
 
-      - name: Copy APK to workspace root with versioned name
+      - name: Copy outputs to workspace root with versioned names
         run: |
-          cp MentzerTracker/app/build/outputs/apk/release/app-release.apk "Rarelift-${{ steps.ver.outputs.version }}.apk"
+          cp MentzerTracker/app/build/outputs/apk/github/release/app-github-release.apk "Rarelift-${{ steps.ver.outputs.version }}.apk"
+          cp MentzerTracker/app/build/outputs/bundle/playRelease/app-play-release.aab "Rarelift-play-${{ steps.ver.outputs.version }}.aab"
+
+      - name: Upload Play bundle (download from this run, upload to Play Console)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rarelift-play-${{ steps.ver.outputs.version }}
+          path: Rarelift-play-*.aab
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

@@ -45,8 +45,8 @@ private val DIPS = RoutineSlot("Dips", "Straight from pushdowns - no rest. Uprig
 val ROUTINES: List<Routine> = listOf(
     Routine(
         key = "ideal",
-        title = "Ideal Routine",
-        summary = "Mentzer's classic split, run as a cycle: Chest & Back → Legs → Shoulders & Arms → Legs. " +
+        title = "Classic Split",
+        summary = "A classic high-intensity split, run as a cycle: Chest & Back → Legs → Shoulders & Arms → Legs. " +
             "One set to failure each, pre-exhaust supersets, 4-7 days between workouts.",
         workouts = listOf(
             RoutineWorkout("Chest & Back", listOf(PEC_DECK, INCLINE_PRESS, PULLOVER, PULLDOWN, DEADLIFT)),
@@ -57,7 +57,7 @@ val ROUTINES: List<Routine> = listOf(
     Routine(
         key = "consolidated",
         title = "Consolidation",
-        summary = "In the spirit of Mentzer's later, briefer programs: two short workouts of big compound lifts, " +
+        summary = "Two short workouts of big compound lifts, " +
             "alternated with a week or more of rest in between.",
         workouts = listOf(
             RoutineWorkout("Consolidation A", listOf(SQUAT, PULLDOWN.copy(cue = "Pull elbows to the ribs; full stretch at the top"), DIPS.copy(cue = "Upright torso; full range you can control"))),

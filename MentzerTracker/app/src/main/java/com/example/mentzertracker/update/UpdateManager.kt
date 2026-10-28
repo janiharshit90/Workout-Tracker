@@ -55,7 +55,8 @@ object UpdateManager {
     private const val APK_MIME = "application/vnd.android.package-archive"
 
     val repo: String get() = BuildConfig.UPDATE_REPO
-    val isConfigured: Boolean get() = Regex("^[\\w.-]+/[\\w.-]+$").matches(repo)
+    /** Only the GitHub edition updates itself; the Play edition is updated by the Play Store. */
+    val isConfigured: Boolean get() = BuildConfig.SELF_UPDATE && Regex("^[\\w.-]+/[\\w.-]+$").matches(repo)
 
     suspend fun check(currentVersion: String): CheckResult = withContext(Dispatchers.IO) {
         if (!isConfigured) return@withContext CheckResult.NotConfigured

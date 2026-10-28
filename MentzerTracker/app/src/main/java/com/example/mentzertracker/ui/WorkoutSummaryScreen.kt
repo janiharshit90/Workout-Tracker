@@ -15,6 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
@@ -40,6 +43,9 @@ fun WorkoutSummaryScreen(vm: WorkoutViewModel, summary: WorkoutSummary) {
     val scheme = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isPro by com.example.mentzertracker.billing.ProAccess.isPro.collectAsState()
+    var showPro by remember { mutableStateOf(false) }
+    if (showPro) ProDialog(onDismiss = { showPro = false })
 
     BackHandler { vm.dismissSummary() }
 
@@ -147,7 +153,8 @@ fun WorkoutSummaryScreen(vm: WorkoutViewModel, summary: WorkoutSummary) {
             ) {
                 OutlinedButton(
                     onClick = {
-                        scope.launch { vm.summaryImage(summary)?.let { shareFile(ctx, it, "image/png", "Share workout") } }
+                        if (!isPro) showPro = true
+                        else scope.launch { vm.summaryImage(summary)?.let { shareFile(ctx, it, "image/png", "Share workout") } }
                     },
                     shape = IronShape,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = scheme.onSurface),

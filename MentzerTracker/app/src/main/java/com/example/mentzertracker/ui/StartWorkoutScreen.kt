@@ -101,7 +101,7 @@ fun StartWorkoutScreen(vm: WorkoutViewModel, onOpenPrinciples: () -> Unit) {
     ) {
         item {
             Column {
-                Text("HEAVY DUTY", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                Text("RARELIFT", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
                     letterSpacing = 3.sp, color = MaterialTheme.colorScheme.primary)
                 Text(
                     "READY\nTO TRAIN?",
@@ -264,7 +264,7 @@ private fun IntroCard(onDismiss: () -> Unit, onPrinciples: () -> Unit) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("HEAVY DUTY IN 3 STEPS", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text("HIGH INTENSITY IN 3 STEPS", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         Text("1.  Pick a workout, check it over, then tap Start.")
         Text("2.  For each exercise, warm up, then take ONE set to true failure.")
         Text("3.  Rest until fully recovered (5+ days) before repeating it.")

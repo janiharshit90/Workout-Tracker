@@ -75,7 +75,7 @@ fun ManageTemplatesScreen(vm: WorkoutViewModel, onBack: () -> Unit) {
         }
         item {
             OutlinedButton(onClick = { showRoutines = true }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Filled.AutoAwesome, null); Spacer(Modifier.width(8.dp)); Text("Add a Heavy Duty routine")
+                Icon(Icons.Filled.AutoAwesome, null); Spacer(Modifier.width(8.dp)); Text("Add a ready-made routine")
             }
         }
         if (templates.isEmpty()) item { EmptyMessage("No templates yet.") }

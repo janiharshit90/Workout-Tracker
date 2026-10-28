@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,6 +55,9 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
 
     var confirmRestore by remember { mutableStateOf(false) }
+    val isPro by com.example.mentzertracker.billing.ProAccess.isPro.collectAsState()
+    var showPro by remember { mutableStateOf(false) }
+    if (showPro) ProDialog(onDismiss = { showPro = false })
     var crashLog by remember { mutableStateOf(CrashLog.read(ctx)) }
 
     val backupLauncher = rememberLauncherForActivityResult(
@@ -83,6 +87,16 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { ScreenTitle("Settings") }
+
+        if (com.example.mentzertracker.billing.ProAccess.SOLD_HERE) item {
+            SettingsSection("Rarelift Pro") {
+                SettingsRow(
+                    Icons.Filled.WorkspacePremium,
+                    if (isPro) "Pro is unlocked" else "Unlock Rarelift Pro",
+                    if (isPro) "Thanks for supporting the app" else "Stats, routines, sharing. One payment, no subscription"
+                ) { showPro = true }
+            }
+        }
 
         item {
             SettingsSection("Units") {
@@ -120,7 +134,7 @@ fun SettingsScreen(
         }
 
         item {
-            SettingsSection("Heavy Duty") {
+            SettingsSection("Training style") {
                 SwitchRow(
                     "Track training to failure",
                     "Adds a per-set toggle for true failure, plus forced reps, negatives, rest-pause and holds",
@@ -163,7 +177,7 @@ fun SettingsScreen(
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                SettingsRow(Icons.Filled.MenuBook, "Heavy Duty principles", "What this app is built around", onOpenPrinciples)
+                SettingsRow(Icons.Filled.MenuBook, "Training principles", "What this app is built around", onOpenPrinciples)
             }
         }
 
@@ -191,7 +205,7 @@ fun SettingsScreen(
             }
         }
 
-        item {
+        if (com.example.mentzertracker.BuildConfig.SELF_UPDATE) item {
             SettingsSection("Updates") {
                 SwitchRow("Check automatically", "On app start, at most every 6 hours", autoCheck, updateVm::setAutoCheck)
                 Spacer(Modifier.height(4.dp))

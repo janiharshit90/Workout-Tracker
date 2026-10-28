@@ -71,7 +71,11 @@ fun HistoryScreen(vm: WorkoutViewModel, onOpenProgress: (Long) -> Unit, onGoToTo
     // history is newest-first; groupBy keeps that order.
     val sessions = remember(history) { history.groupBy { it.sessionDate }.toList() }
     val infoByDate = remember(history) { sessionsByDay(history).values.flatten().associateBy { it.date } }
+    val isPro by com.example.mentzertracker.billing.ProAccess.isPro.collectAsState()
+    var showPro by remember { mutableStateOf(false) }
+    if (showPro) ProDialog(onDismiss = { showPro = false })
     fun shareSession(date: Long) {
+        if (!isPro) { showPro = true; return }
         scope.launch {
             val summary = vm.sessionSummary(date) ?: return@launch
             vm.summaryImage(summary)?.let { shareFile(ctx, it, "image/png", "Share workout") }
