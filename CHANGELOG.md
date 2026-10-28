@@ -4,6 +4,27 @@ Newest first. Each release is a git tag (`v1.10.0`), built and published by the 
 and picked up by the app's built-in updater. Detailed notes for older rounds are in
 [`docs/rounds/`](docs/rounds/).
 
+## 2.1.0 (next): fixes and the best of an outside review
+A second AI (Gemini) built its own version of round 14. We compared it line by line and kept what was
+genuinely better; everything else stayed as shipped.
+
+- **Rest timer alert fixed on Android 12+.** The alarm call it relies on needs the "Alarms & reminders"
+  permission there; it was never declared, so the "rest is over" alert silently didn't fire with the
+  app closed. Now declared (GitHub edition: granted automatically; Play edition: Android 14+ asks once,
+  with the reason). If it isn't allowed, a slightly less precise alarm is used, and the in-app
+  countdown finishes the rest itself whenever the app is open.
+- **Reorder exercises** with up/down arrows in the workout preview and the template editor (superset
+  links next to a moved exercise are cleared so pairs never re-form by accident).
+- **Plate calculator** on every exercise: plates per side for the weight you've typed (or today's
+  target), with 45/35/15 lb or 20/15/10 kg bars.
+- **Charts you can read**: progress and body-weight charts space points by real dates, and tapping or
+  dragging shows that day's exact numbers.
+- **Logging a past workout** now shows targets, "last time" and stall advice as they were on that day,
+  and its summary shows the PRs and changes it really made back then.
+- Not taken from that version: its own schema for the techniques (we already have them), switching on
+  code shrinking (needs a real-phone test first), and USE_EXACT_ALARM in the Play edition (restricted by
+  Google Play).
+
 ## 2.0.0 (next): the app is now **Rarelift**
 - New name and a new app ID, `com.rarelift.app`, ready for Google Play and developer verification.
   "Ironset" was dropped because a strength tracker called "IronSets" already exists.

@@ -9,6 +9,10 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Rest-timer countdown on the lock screen + the "rest is over" alert (Android 13+ asks at runtime) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Rest-over alarm on time with the phone locked (Android 12+ requires this for setAlarmClock).
+         Granted automatically on Android 12-13; on 14+ the app asks the user to switch it on.
+         The GitHub edition also declares USE_EXACT_ALARM (auto-granted); Play restricts that one. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:name=".MentzerApp"

@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Link
@@ -53,6 +54,7 @@ import com.example.mentzertracker.WorkoutViewModel
 import com.example.mentzertracker.data.Exercise
 import com.example.mentzertracker.data.SetWithExercise
 import com.example.mentzertracker.ui.theme.DisplayFont
+import com.example.mentzertracker.timer.RestTimer
 import com.example.mentzertracker.ui.theme.IronShape
 import com.example.mentzertracker.util.*
 import kotlinx.coroutines.delay
@@ -462,6 +464,16 @@ private fun ExercisePage(
 ) {
     val scheme = MaterialTheme.colorScheme
     val step = stepFor(exercise.stepLbs, unit)
+    var showPlates by remember { mutableStateOf(false) }
+    if (showPlates) {
+        PlateCalculatorDialog(
+            // What's typed in the first set, else today's target.
+            initialWeight = sets.firstOrNull()?.weight?.let(::parseWeight)
+                ?: suggestion?.let { lbsToDisplay(it.weightLbs, unit) },
+            unit = unit,
+            onDismiss = { showPlates = false }
+        )
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
@@ -485,6 +497,9 @@ private fun ExercisePage(
                 style = MaterialTheme.typography.headlineLarge.copy(fontSize = 52.sp, lineHeight = 50.sp),
                 modifier = Modifier.weight(1f)
             )
+            IconButton(onClick = { showPlates = true }) {
+                Icon(Icons.Filled.Calculate, "Plate calculator", tint = scheme.onSurfaceVariant)
+            }
             IconButton(onClick = onOpenProgress) {
                 Icon(Icons.Filled.ShowChart, "Progress for ${exercise.name}", tint = scheme.onSurfaceVariant)
             }
@@ -803,17 +818,42 @@ private fun RestRow(vm: WorkoutViewModel, title: String, nextLine: String) {
 
     // Android 13+ needs permission to show the lock-screen countdown / rest-over alert.
     val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    // Android 14+ may need the user to allow "Alarms & reminders" for an on-time alert when locked.
+    // Asked once, with the reason; the timer works either way.
+    val timerPrefs = remember { ctx.getSharedPreferences("rest_timer_ui", android.content.Context.MODE_PRIVATE) }
+    var askAlarms by remember { mutableStateOf(false) }
+    if (askAlarms) {
+        AlertDialog(
+            onDismissRequest = { askAlarms = false },
+            title = { Text("ON-TIME REST ALERTS") },
+            text = { Text("To buzz exactly when your rest is over, even with the phone locked, Android needs " +
+                "you to allow \"Alarms & reminders\" for this app. Without it the alert can arrive a little late.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    askAlarms = false
+                    runCatching { ctx.startActivity(RestTimer.exactAlarmSettingsIntent(ctx)) }
+                }) { Text("ALLOW") }
+            },
+            dismissButton = { TextButton(onClick = { askAlarms = false }) { Text("NOT NOW") } }
+        )
+    }
     fun start() {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        else if (!RestTimer.canAlarmExactly(ctx) && !timerPrefs.getBoolean("asked_exact", false)) {
+            timerPrefs.edit().putBoolean("asked_exact", true).apply()
+            askAlarms = true
+        }
         vm.startTimer(title, nextLine)
     }
 
     LaunchedEffect(endAt) {
-        if (endAt == null) return@LaunchedEffect
+        val end = endAt ?: return@LaunchedEffect
         while (true) {
             now = System.currentTimeMillis()
+            // Finish the rest ourselves while the app is open, rather than relying on the alarm.
+            if (now >= end) { RestTimer.onAlarm(ctx); break }
             delay(250)
         }
     }

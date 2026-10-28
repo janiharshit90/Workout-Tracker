@@ -123,12 +123,39 @@ object RestTimer {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-    /** setAlarmClock needs no special permission and isn't delayed by Doze. */
+    /**
+     * True when the rest-over alarm can fire exactly on time. From Android 12, setAlarmClock needs
+     * the "Alarms & reminders" permission (SCHEDULE_EXACT_ALARM, or USE_EXACT_ALARM in the GitHub
+     * edition). On Android 14+ the user may have to switch it on (see [exactAlarmSettingsIntent]).
+     */
+    fun canAlarmExactly(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            (ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+
+    /** Opens this app's "Alarms & reminders" switch (Android 12+). */
+    fun exactAlarmSettingsIntent(ctx: Context): Intent =
+        Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:${ctx.packageName}"))
+
+    /**
+     * Exact alarm (fires on time even when locked and dozing) when allowed. Otherwise an inexact
+     * one that still works while idle and is usually close to on time; the in-app countdown also
+     * finishes the rest itself whenever the app is open.
+     *
+     * (Until v2.1 this called setAlarmClock without the permission, which throws on Android 12+;
+     * the exception was swallowed, so the rest-over alert silently never fired.)
+     */
     private fun schedule(ctx: Context, endAt: Long) {
+        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val done = broadcast(ctx, ACTION_DONE, 1)
         try {
-            val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            am.setAlarmClock(AlarmManager.AlarmClockInfo(endAt, openApp(ctx)), broadcast(ctx, ACTION_DONE, 1))
-        } catch (_: Exception) { /* the in-app timer UI still works */ }
+            if (canAlarmExactly(ctx)) {
+                am.setAlarmClock(AlarmManager.AlarmClockInfo(endAt, openApp(ctx)), done)
+                return
+            }
+        } catch (_: SecurityException) { /* permission revoked in between: fall through */ }
+        try {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endAt, done)
+        } catch (_: Exception) { /* the in-app countdown still works */ }
     }
 
     private fun cancelAlarm(ctx: Context) {

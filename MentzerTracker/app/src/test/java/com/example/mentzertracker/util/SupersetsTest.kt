@@ -31,4 +31,15 @@ class SupersetsTest {
         // Removing the first one is fine.
         assertEquals(setOf(3L), supersetsWithout(ids, setOf(1L, 3L), 1L))
     }
+
+    @Test fun movingSwapsNeighboursAndDropsTouchedLinks() {
+        // 1+2, 3+4. Move 3 up: order 1,3,2,4; links of 2, 3 and the one before them (1) go.
+        val (order, ss) = moveExercise(ids, setOf(1L, 3L), 2, -1)
+        assertEquals(listOf(1L, 3L, 2L, 4L), order)
+        assertEquals(emptySet<Long>(), ss)
+        // Moving the last one down does nothing.
+        assertEquals(ids to setOf(1L), moveExercise(ids, setOf(1L), 3, 1))
+        // Unrelated links survive: swap 3 and 4 keeps 1+2.
+        assertEquals(setOf(1L), moveExercise(ids, setOf(1L, 3L), 3, -1).second)
+    }
 }

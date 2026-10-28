@@ -189,7 +189,12 @@ fun StatsScreen(vm: WorkoutViewModel, onExerciseClick: (Long) -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         LineChart(
                             bodyWeights.map { lbsToDisplay(it.weightLbs, unit) },
-                            bodyWeights.first().date, bodyWeights.last().date, unit.label, height = 120
+                            bodyWeights.first().date, bodyWeights.last().date, unit.label, height = 120,
+                            dates = bodyWeights.map { it.date },
+                            labelFor = { i ->
+                                formatDate(bodyWeights[i].date, "EEE, MMM d").uppercase() + " \u00b7 " +
+                                    "${formatWeight(lbsToDisplay(bodyWeights[i].weightLbs, unit))} ${unit.label}"
+                            }
                         )
                     }
                     Spacer(Modifier.height(6.dp))
