@@ -28,12 +28,19 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import com.example.mentzertracker.billing.ProAccess
 import com.example.mentzertracker.ui.*
 import com.example.mentzertracker.ui.theme.MentzerTrackerTheme
 import com.example.mentzertracker.update.UpdateViewModel
 import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : ComponentActivity() {
+    // Picks up purchases made elsewhere (another device, a refund) whenever the app comes back.
+    override fun onResume() {
+        super.onResume()
+        ProAccess.refresh()
+    }
+
     private val vm: WorkoutViewModel by viewModels()
     private val updateVm: UpdateViewModel by viewModels()
 
@@ -77,6 +84,10 @@ fun AppRoot(vm: WorkoutViewModel, updateVm: UpdateViewModel) {
             )
             if (result == SnackbarResult.ActionPerformed) e.action?.invoke()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        ProAccess.messages.collect { snackbar.showSnackbar(it) }
     }
 
     UpdateDialog(updateVm)

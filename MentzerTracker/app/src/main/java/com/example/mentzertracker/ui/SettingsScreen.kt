@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,6 +55,9 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
 
     var confirmRestore by remember { mutableStateOf(false) }
+    val isPro by com.example.mentzertracker.billing.ProAccess.isPro.collectAsState()
+    var showPro by remember { mutableStateOf(false) }
+    if (showPro) ProDialog(onDismiss = { showPro = false })
     var crashLog by remember { mutableStateOf(CrashLog.read(ctx)) }
 
     val backupLauncher = rememberLauncherForActivityResult(
@@ -83,6 +87,16 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { ScreenTitle("Settings") }
+
+        if (com.example.mentzertracker.billing.ProAccess.SOLD_HERE) item {
+            SettingsSection("Rarelift Pro") {
+                SettingsRow(
+                    Icons.Filled.WorkspacePremium,
+                    if (isPro) "Pro is unlocked" else "Unlock Rarelift Pro",
+                    if (isPro) "Thanks for supporting the app" else "Stats, routines, sharing. One payment, no subscription"
+                ) { showPro = true }
+            }
+        }
 
         item {
             SettingsSection("Units") {
@@ -120,7 +134,7 @@ fun SettingsScreen(
         }
 
         item {
-            SettingsSection("Heavy Duty") {
+            SettingsSection("Training style") {
                 SwitchRow(
                     "Track training to failure",
                     "Adds a per-set toggle for true failure, plus forced reps, negatives, rest-pause and holds",
@@ -163,7 +177,7 @@ fun SettingsScreen(
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                SettingsRow(Icons.Filled.MenuBook, "Heavy Duty principles", "What this app is built around", onOpenPrinciples)
+                SettingsRow(Icons.Filled.MenuBook, "Training principles", "What this app is built around", onOpenPrinciples)
             }
         }
 
@@ -178,7 +192,7 @@ fun SettingsScreen(
             SettingsSection("Backup & export") {
                 SettingsRow(Icons.Filled.Backup, "Back up data",
                     "Save everything to a file (do this before reinstalling)") {
-                    backupLauncher.launch("mentzer-backup-${formatDate(System.currentTimeMillis(), "yyyy-MM-dd")}.json")
+                    backupLauncher.launch("rarelift-backup-${formatDate(System.currentTimeMillis(), "yyyy-MM-dd")}.json")
                 }
                 SettingsRow(Icons.Filled.Restore, "Restore from backup", "Replace current data with a backup file") {
                     confirmRestore = true
@@ -191,7 +205,7 @@ fun SettingsScreen(
             }
         }
 
-        item {
+        if (com.example.mentzertracker.BuildConfig.SELF_UPDATE) item {
             SettingsSection("Updates") {
                 SwitchRow("Check automatically", "On app start, at most every 6 hours", autoCheck, updateVm::setAutoCheck)
                 Spacer(Modifier.height(4.dp))
@@ -225,7 +239,7 @@ fun SettingsScreen(
                 SettingsRow(Icons.Filled.Feedback, "Send feedback",
                     "Share a note with the app version attached") {
                     shareText(
-                        ctx, "Mentzer Tracker feedback",
+                        ctx, "Rarelift feedback",
                         "What happened / what would help:\n\n\n\u2014\n" + CrashLog.header(),
                         "Send feedback"
                     )
@@ -233,7 +247,7 @@ fun SettingsScreen(
                 if (crashLog != null) {
                     SettingsRow(Icons.Filled.BugReport, "Share crash log",
                         "The app closed unexpectedly last time \u2014 send the details") {
-                        shareText(ctx, "Mentzer Tracker crash log", crashLog!!, "Share crash log")
+                        shareText(ctx, "Rarelift crash log", crashLog!!, "Share crash log")
                     }
                     SettingsRow(Icons.Filled.Delete, "Clear crash log", null) {
                         CrashLog.clear(ctx); crashLog = null
@@ -243,7 +257,7 @@ fun SettingsScreen(
         }
 
         item {
-            Text("Mentzer Tracker v${updateVm.currentVersion}",
+            Text("Rarelift v${updateVm.currentVersion}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

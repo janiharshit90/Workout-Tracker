@@ -145,7 +145,7 @@ object ShareCard {
         y += 40f
         p.color = LINE
         c.drawRect(PAD, y, right, y + 2f, p)
-        text(c, p, "HEAVY DUTY · ONE SET TO FAILURE", PAD, y + 56f, 30f, MUTED, semi, spacing = 0.16f)
+        text(c, p, "RARELIFT · ONE SET TO FAILURE", PAD, y + 56f, 30f, MUTED, semi, spacing = 0.16f)
         return bmp
     }
 

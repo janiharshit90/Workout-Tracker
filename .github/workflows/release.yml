@@ -79,19 +79,36 @@ jobs:
             echo "keyPassword=$KEY_PASSWORD"
           } > MentzerTracker/keystore.properties
 
-      - name: Build signed release APK
+      # GitHub edition -> signed APK on the GitHub Release (what the in-app updater installs).
+      # Play edition    -> signed App Bundle (.aab) to upload in Play Console, kept as a workflow artifact.
+      - name: Build signed release APK and Play bundle
         working-directory: MentzerTracker
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon -PappVersionName="${{ steps.ver.outputs.version }}"
+          ./gradlew assembleGithubRelease bundlePlayRelease --no-daemon -PappVersionName="${{ steps.ver.outputs.version }}"
 
-      - name: Copy APK to workspace root with versioned name
+      - name: Copy outputs to workspace root with versioned names
         run: |
-          cp MentzerTracker/app/build/outputs/apk/release/app-release.apk "MentzerTracker-${{ steps.ver.outputs.version }}.apk"
+          cp MentzerTracker/app/build/outputs/apk/github/release/app-github-release.apk "Rarelift-${{ steps.ver.outputs.version }}.apk"
+          cp MentzerTracker/app/build/outputs/bundle/playRelease/app-play-release.aab "Rarelift-play-${{ steps.ver.outputs.version }}.aab"
+
+      - name: Upload Play bundle (download from this run, upload to Play Console)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rarelift-play-${{ steps.ver.outputs.version }}
+          path: Rarelift-play-*.aab
+
+      # Hand-written notes go first when docs/release-notes/<tag>.md exists. The old app's update
+      # dialog shows these, so anything users must do (like the 2.0 move) belongs there.
+      - name: Release notes
+        run: |
+          f="docs/release-notes/${{ steps.ver.outputs.tag }}.md"
+          if [ -f "$f" ]; then cp "$f" release-notes.md; else : > release-notes.md; fi
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && steps.ver.outputs.tag || github.ref_name }}
-          files: MentzerTracker-*.apk
+          files: Rarelift-*.apk
+          body_path: release-notes.md
           generate_release_notes: true

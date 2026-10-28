@@ -51,11 +51,12 @@ data class VerifyProblem(val message: String, val signatureMismatch: Boolean = f
  */
 object UpdateManager {
 
-    private const val USER_AGENT = "MentzerTracker-Updater"
+    private const val USER_AGENT = "Rarelift-Updater"
     private const val APK_MIME = "application/vnd.android.package-archive"
 
     val repo: String get() = BuildConfig.UPDATE_REPO
-    val isConfigured: Boolean get() = Regex("^[\\w.-]+/[\\w.-]+$").matches(repo)
+    /** Only the GitHub edition updates itself; the Play edition is updated by the Play Store. */
+    val isConfigured: Boolean get() = BuildConfig.SELF_UPDATE && Regex("^[\\w.-]+/[\\w.-]+$").matches(repo)
 
     suspend fun check(currentVersion: String): CheckResult = withContext(Dispatchers.IO) {
         if (!isConfigured) return@withContext CheckResult.NotConfigured
@@ -131,7 +132,7 @@ object UpdateManager {
             val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }
             val tmp = File(dir, "download.part")
-            val out = File(dir, "MentzerTracker-${release.versionName}.apk")
+            val out = File(dir, "Rarelift-${release.versionName}.apk")
 
             val conn = (URL(release.apkUrl).openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = true  // GitHub redirects to its CDN
@@ -187,7 +188,11 @@ object UpdateManager {
         val archive = pm.getPackageArchiveInfo(apk.path, flags)
             ?: return VerifyProblem("The downloaded file isn't a valid APK.")
         if (archive.packageName != ctx.packageName) {
-            return VerifyProblem("The downloaded APK is for a different app (${archive.packageName}).")
+            return VerifyProblem(
+                "This release is a different app (${archive.packageName}), so it can't update this one. " +
+                    "If the app has moved to a new name: back up from Settings, install the new app from the " +
+                    "release page, then restore your backup in it."
+            )
         }
         @Suppress("DEPRECATION")
         val installed = pm.getPackageInfo(ctx.packageName, flags)

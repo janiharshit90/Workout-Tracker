@@ -275,7 +275,7 @@ private fun StyleSwitch(heavy: Boolean, onHeavy: () -> Unit, onSeveral: () -> Un
             .clip(IronShape)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, IronShape)
     ) {
-        StyleSegment("One set · Heavy Duty", selected = heavy, onClick = onHeavy, modifier = Modifier.weight(1f))
+        StyleSegment("One set to failure", selected = heavy, onClick = onHeavy, modifier = Modifier.weight(1f))
         StyleSegment("Several sets", selected = !heavy, onClick = onSeveral, modifier = Modifier.weight(1f))
     }
 }

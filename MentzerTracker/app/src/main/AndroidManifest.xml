@@ -3,8 +3,8 @@
 
     <!-- Checking GitHub for updates + downloading them -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Handing the downloaded APK to the system installer -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- REQUEST_INSTALL_PACKAGES (for the self-updater) is declared in src/github/ only:
+         Google Play doesn't allow it, and the Play edition is updated by the Play Store. -->
     <!-- Rest-timer buzz -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Rest-timer countdown on the lock screen + the "rest is over" alert (Android 13+ asks at runtime) -->
@@ -15,7 +15,7 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="Mentzer Tracker"
+        android:label="Rarelift"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
 

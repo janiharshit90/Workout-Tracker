@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mentzertracker.WorkoutViewModel
+import com.example.mentzertracker.billing.ProAccess
 import com.example.mentzertracker.ui.theme.IronShape
 import com.example.mentzertracker.util.*
 import kotlin.math.roundToInt
@@ -45,6 +46,9 @@ fun StatsScreen(vm: WorkoutViewModel, onExerciseClick: (Long) -> Unit) {
     val bodyWeights by vm.bodyWeights.collectAsState()
     val scheme = MaterialTheme.colorScheme
 
+    val isPro by ProAccess.isPro.collectAsState()
+    var showPro by remember { mutableStateOf(false) }
+    if (showPro) ProDialog(onDismiss = { showPro = false })
     var loggingWeight by remember { mutableStateOf(false) }
     if (loggingWeight) {
         BodyWeightDialog(
@@ -89,7 +93,14 @@ fun StatsScreen(vm: WorkoutViewModel, onExerciseClick: (Long) -> Unit) {
                 }
             }
 
-            item {
+            if (!isPro) item {
+                ProLockedCard(
+                    "Consistency & strength trends",
+                    "Weekly consistency and how every lift is trending",
+                    onUnlock = { showPro = true }
+                )
+            }
+            if (isPro) item {
                 Panel {
                     SectionHeading("Consistency · $CONSISTENCY_WEEKS weeks")
                     Spacer(Modifier.height(10.dp))
@@ -97,7 +108,7 @@ fun StatsScreen(vm: WorkoutViewModel, onExerciseClick: (Long) -> Unit) {
                 }
             }
 
-            item {
+            if (isPro) item {
                 Panel {
                     SectionHeading("Strength · last $TREND_WEEKS weeks")
                     if (overall == null) {
@@ -143,7 +154,10 @@ fun StatsScreen(vm: WorkoutViewModel, onExerciseClick: (Long) -> Unit) {
             }
         }
 
-        item {
+        if (!isPro) item {
+            ProLockedCard("Body weight", "Log your weight and see it next to your strength", onUnlock = { showPro = true })
+        }
+        if (isPro) item {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { SectionHeading("Body weight") }

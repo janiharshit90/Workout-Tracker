@@ -4,7 +4,16 @@ Newest first. Each release is a git tag (`v1.10.0`), built and published by the 
 and picked up by the app's built-in updater. Detailed notes for older rounds are in
 [`docs/rounds/`](docs/rounds/).
 
-## 1.11.0 (next)
+## 2.0.0 (next): the app is now **Rarelift**
+- New name and a new app ID, `com.rarelift.app`, ready for Google Play and developer verification.
+  "Ironset" was dropped because a strength tracker called "IronSets" already exists.
+- **One-time move:** Android treats the new ID as a different app, so existing users back up, install
+  Rarelift, and restore (steps in the README). Backups from the old app restore as-is.
+- The release notes for 2.0.0 must carry those steps: the old app's update dialog shows them, then
+  refuses to install the new ID. The updater's "different app" message is now friendlier too, for any
+  future move.
+
+## 1.11.0 (2026-10-29)
 
 **Database v6 → v7, with a written migration.** History, templates and settings carry over. Back up
 from Settings first anyway; it's a good habit before any update that touches the database.

@@ -40,7 +40,9 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.mentzertracker"
+        // The app's identity on Android and Google Play. It can never change once published on Play.
+        // (The code package below, com.example.mentzertracker, is internal and doesn't matter.)
+        applicationId = "com.rarelift.app"
         minSdk = 24
         targetSdk = 35
         versionCode = appVersionCode
@@ -58,6 +60,23 @@ android {
                 keyAlias = keystoreProps["keyAlias"] as String
                 keyPassword = keystoreProps["keyPassword"] as String
             }
+        }
+    }
+
+    // Two editions of the same app:
+    //  - github: what's on GitHub Releases today. Updates itself from GitHub; everything unlocked.
+    //  - play:   for Google Play. No self-updater or install permission (Play forbids both), and
+    //            "Rarelift Pro" is a one-time in-app purchase through Google Play Billing.
+    // Flavor-specific code lives in src/github/ and src/play/ (same class names in both).
+    flavorDimensions += "store"
+    productFlavors {
+        create("github") {
+            dimension = "store"
+            buildConfigField("boolean", "SELF_UPDATE", "true")
+        }
+        create("play") {
+            dimension = "store"
+            buildConfigField("boolean", "SELF_UPDATE", "false")
         }
     }
 
@@ -95,6 +114,9 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+
+    // Google Play Billing (Play edition only). Play requires library version 8+.
+    "playImplementation"("com.android.billingclient:billing:8.0.0")
 
     testImplementation("junit:junit:4.13.2")
 }

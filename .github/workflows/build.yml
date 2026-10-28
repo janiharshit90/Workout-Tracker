@@ -34,16 +34,17 @@ jobs:
         working-directory: MentzerTracker
         run: |
           chmod +x ./gradlew
-          ./gradlew testDebugUnitTest --no-daemon
+          ./gradlew testGithubDebugUnitTest --no-daemon
 
-      - name: Build debug APK
+      # Both editions must compile: GitHub (self-updating) and Play (billing, no updater).
+      - name: Build debug APKs
         working-directory: MentzerTracker
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleGithubDebug assemblePlayDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MentzerTracker-debug
-          path: MentzerTracker/app/build/outputs/apk/debug/*.apk
+          name: Rarelift-debug
+          path: MentzerTracker/app/build/outputs/apk/*/debug/*.apk

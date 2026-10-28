@@ -81,7 +81,7 @@ fun PrinciplesScreen(onBack: () -> Unit) {
     ) {
         item {
             SubScreenHeader(
-                "Heavy Duty Principles",
+                "Training principles",
                 subtitle = "The ideas this app is built around",
                 onBack = onBack
             )
@@ -102,7 +102,7 @@ fun PrinciplesScreen(onBack: () -> Unit) {
         }
         item {
             Text(
-                "These are general principles distilled from the wider Heavy Duty / HIT " +
+                "These are general principles distilled from the wider high-intensity training (HIT) " +
                 "training tradition, not medical advice. Listen to your own body and adjust.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

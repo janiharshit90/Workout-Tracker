@@ -12,6 +12,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.example.mentzertracker.billing.ProAccess
 import com.example.mentzertracker.ui.theme.IronShape
 import com.example.mentzertracker.util.ROUTINES
 
@@ -19,9 +25,12 @@ import com.example.mentzertracker.util.ROUTINES
 @Composable
 fun RoutinesDialog(onDismiss: () -> Unit, onInstall: (key: String) -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val isPro by ProAccess.isPro.collectAsState()
+    var showPro by remember { mutableStateOf(false) }
+    if (showPro) { ProDialog(onDismiss = { showPro = false }); return }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("HEAVY DUTY ROUTINES") },
+        title = { Text("READY-MADE ROUTINES") },
         text = {
             Column(
                 Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
@@ -36,7 +45,7 @@ fun RoutinesDialog(onDismiss: () -> Unit, onInstall: (key: String) -> Unit) {
                     Column(
                         Modifier.fillMaxWidth().clip(IronShape)
                             .border(1.dp, scheme.outlineVariant, IronShape)
-                            .clickable { onInstall(r.key) }
+                            .clickable { if (isPro) onInstall(r.key) else showPro = true }
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -56,7 +65,7 @@ fun RoutinesDialog(onDismiss: () -> Unit, onInstall: (key: String) -> Unit) {
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
-                        Text("TAP TO ADD", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                        Text(if (isPro) "TAP TO ADD" else "PRO · TAP TO UNLOCK", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp, color = scheme.primary, modifier = Modifier.padding(top = 6.dp))
                     }
                 }
