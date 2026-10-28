@@ -7,6 +7,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.LocalFireDepartment
@@ -128,11 +130,25 @@ fun AddTemplateDialog(
                 }
                 if (selected.size >= 2) {
                     Spacer(Modifier.height(10.dp))
-                    Text("Supersets (tap a link for no rest into the next one)", style = MaterialTheme.typography.labelMedium)
+                    Text("Order & supersets (arrows to reorder; tap a link for no rest into the next one)",
+                        style = MaterialTheme.typography.labelMedium)
                     Column(Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
-                        selected.forEachIndexed { i, id ->
-                            Text("${i + 1}. ${names[id].orEmpty()}", style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(vertical = 2.dp))
+                        selected.toList().forEachIndexed { i, id ->
+                            fun move(delta: Int) {
+                                val (ids, ss) = com.example.mentzertracker.util.moveExercise(selected.toList(), linked.toSet(), i, delta)
+                                selected.clear(); selected.addAll(ids)
+                                linked.clear(); linked.addAll(ss)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${i + 1}. ${names[id].orEmpty()}", style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f).padding(vertical = 2.dp))
+                                IconButton(onClick = { move(-1) }, enabled = i > 0, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Filled.KeyboardArrowUp, "Move ${names[id].orEmpty()} up", Modifier.size(18.dp))
+                                }
+                                IconButton(onClick = { move(1) }, enabled = i < selected.lastIndex, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Filled.KeyboardArrowDown, "Move ${names[id].orEmpty()} down", Modifier.size(18.dp))
+                                }
+                            }
                             if (i < selected.lastIndex) {
                                 val on = id in linked
                                 Row(

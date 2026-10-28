@@ -115,12 +115,24 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     val prs: StateFlow<Map<Long, PrInfo>> = history.map { computePrs(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    /**
+     * Midnight of the day being backfilled (a past workout being previewed or logged), else null.
+     * While backfilling, "last time", notes, stalls and targets only look at sessions BEFORE that
+     * day, so you see what you were up against back then. Kept in sync in the init block.
+     */
+    private val backfillDay = MutableStateFlow<Long?>(null)
+
+    /** History as of now, or as of the backfilled day. */
+    private val historyForTargets: Flow<List<SetWithExercise>> = combine(history, backfillDay) { h, day ->
+        if (day == null) h else h.filter { it.sessionDate < day }
+    }
+
     /** exerciseId -> sets from the most recent session that included it. */
-    val lastSessions: StateFlow<Map<Long, List<SetWithExercise>>> = history.map { computeLastSessions(it) }
+    val lastSessions: StateFlow<Map<Long, List<SetWithExercise>>> = historyForTargets.map { computeLastSessions(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /** exerciseId -> the latest non-blank note, shown as a reminder the next time you train it. */
-    val lastNotes: StateFlow<Map<Long, NoteInfo>> = history.map { computeLastNotes(it) }
+    val lastNotes: StateFlow<Map<Long, NoteInfo>> = historyForTargets.map { computeLastNotes(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val templates: StateFlow<List<WorkoutTemplate>> = templateDao.getAllTemplates()
@@ -198,7 +210,7 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     val recoveryDays: StateFlow<Int> = _recoveryDays
 
     /** exerciseId -> a stall warning when the last sessions stopped beating your best. */
-    val stalls: StateFlow<Map<Long, Stall>> = combine(history, _recoveryDays) { h, days -> computeStalls(h, days) }
+    val stalls: StateFlow<Map<Long, Stall>> = combine(historyForTargets, _recoveryDays) { h, days -> computeStalls(h, days) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     /** Rep range that drives progression suggestions (double progression). */
@@ -251,6 +263,10 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        viewModelScope.launch {
+            combine(_activeWorkout, _preview) { w, p -> (w?.pastDate ?: p?.pastDate)?.let(::startOfDay) }
+                .collect { backfillDay.value = it }
+        }
         viewModelScope.launch { RestTimer.finished.collect { postEvent("Rest is over \u2014 next set!") } }
         viewModelScope.launch {
             if (exerciseDao.count() == 0) seedDefaults()
@@ -308,6 +324,15 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
             exerciseIds = p.exerciseIds - exerciseId,
             supersets = supersetsWithout(p.exerciseIds, p.supersets, exerciseId)
         )
+    }
+
+    /** Moves an exercise up (-1) or down (+1) in the preview, keeping superset links sensible. */
+    fun previewMove(exerciseId: Long, delta: Int) {
+        val p = _preview.value ?: return
+        val (ids, ss) = com.example.mentzertracker.util.moveExercise(
+            p.exerciseIds, p.supersets, p.exerciseIds.indexOf(exerciseId), delta
+        )
+        _preview.value = p.copy(exerciseIds = ids, supersets = ss)
     }
 
     /** Starts the previewed workout. This is the moment the clock starts. */
@@ -646,12 +671,17 @@ class WorkoutViewModel(app: Application) : AndroidViewModel(app) {
                     date = sessionDate
                 )
 
+                // A backfilled workout is judged against what came before THAT day (PRs, vs last time).
+                val finalSummary = if (past == null) summary else
+                    summarizeSession(sessionDate, summary.name, workoutDao.getAllWithExerciseOnce())
+                        ?.copy(skippedIncomplete = incomplete, durationSec = 0) ?: summary
+
                 RestTimer.stop(ctx)
                 setInputs(emptyMap())
                 setNotes(emptyMap())
                 setSessionStart(null)
                 setActiveWorkout(null)
-                _summary.value = summary
+                _summary.value = finalSummary
             } finally {
                 logging = false
             }

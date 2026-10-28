@@ -77,7 +77,17 @@ fun ProgressScreen(vm: WorkoutViewModel, exerciseId: Long, onBack: () -> Unit) {
         }
         item { StatsRow(values, unit) }
         item {
-            if (points.size >= 2) LineChart(values, points.first().date, points.last().date, unit.label)
+            if (points.size >= 2) LineChart(
+                values, points.first().date, points.last().date, unit.label,
+                dates = points.map { it.date },
+                labelFor = { i ->
+                    val p = points[i]
+                    formatDate(p.date, "EEE, MMM d yyyy").uppercase() + " \u00b7 " +
+                        "${formatWeight(values[i])} ${unit.label}" +
+                        (if (metric != Metric.TOP) "  (${formatWeight(lbsToDisplay(p.topWeight, unit))} \u00d7 ${p.topReps})"
+                         else " \u00d7 ${p.topReps}")
+                }
+            )
             else Text("Log one more session to see a trend line.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall)

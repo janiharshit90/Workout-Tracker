@@ -2,4 +2,7 @@
 <!-- GitHub edition only: lets the in-app updater hand a downloaded APK to the system installer. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Exact rest-over alarm without asking (Android 13+). Not used in the Play edition, where
+         Google limits it to alarm-clock/calendar apps; that edition uses SCHEDULE_EXACT_ALARM. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 </manifest>

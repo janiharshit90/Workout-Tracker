@@ -29,3 +29,17 @@ fun supersetsWithout(ids: List<Long>, supersets: Set<Long>, removed: Long): Set<
 /** Only keep links that point at a real next exercise (drops a link on the last one). */
 fun cleanSupersets(ids: List<Long>, supersets: Set<Long>): Set<Long> =
     ids.dropLast(1).filter { it in supersets }.toSet()
+
+/**
+ * Moves the exercise at [index] one place up (-1) or down (+1). Links touching the two swapped
+ * exercises (and the one just before them) are dropped, so a superset never silently re-pairs with
+ * a different exercise. Returns the list unchanged if the move is out of range.
+ */
+fun moveExercise(ids: List<Long>, supersets: Set<Long>, index: Int, delta: Int): Pair<List<Long>, Set<Long>> {
+    val j = index + delta
+    if (index !in ids.indices || j !in ids.indices || delta == 0) return ids to supersets
+    val lo = minOf(index, j)
+    val touched = setOfNotNull(ids[index], ids[j], ids.getOrNull(lo - 1))
+    val moved = ids.toMutableList().apply { val t = this[index]; this[index] = this[j]; this[j] = t }
+    return moved to (supersets - touched)
+}

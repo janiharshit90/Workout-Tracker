@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
@@ -201,6 +203,16 @@ fun WorkoutPreviewScreen(vm: WorkoutViewModel, preview: WorkoutPreview) {
                                     letterSpacing = 0.8.sp, color = scheme.error
                                 )
                             }
+                        }
+                    }
+                    Column {
+                        IconButton(onClick = { vm.previewMove(ex.id, -1) }, enabled = index > 0,
+                            modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.KeyboardArrowUp, "Move ${ex.name} up")
+                        }
+                        IconButton(onClick = { vm.previewMove(ex.id, 1) }, enabled = index < exercises.lastIndex,
+                            modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.KeyboardArrowDown, "Move ${ex.name} down")
                         }
                     }
                     IconButton(onClick = { vm.previewRemove(ex.id) }) {
