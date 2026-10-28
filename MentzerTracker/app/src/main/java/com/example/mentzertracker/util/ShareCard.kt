@@ -88,7 +88,10 @@ object ShareCard {
             val x = PAD + i * (bw + gap)
             box(c, p, RectF(x, y, x + bw, y + 176f), PANEL, LINE)
             val highlight = label == "PRS" && summary.prCount > 0
-            text(c, p, value, x + 24f, y + 100f, 76f, if (highlight) LIME else TEXT, bold)
+            var vs = 76f
+            p.typeface = bold; p.letterSpacing = 0f; p.textSize = vs
+            while (p.measureText(value) > bw - 40f && vs > 40f) { vs -= 4f; p.textSize = vs }
+            text(c, p, value, x + 24f, y + 100f, vs, if (highlight) LIME else TEXT, bold)
             text(c, p, label, x + 24f, y + 146f, 28f, MUTED, semi, spacing = 0.12f)
         }
         y += 176f + 48f

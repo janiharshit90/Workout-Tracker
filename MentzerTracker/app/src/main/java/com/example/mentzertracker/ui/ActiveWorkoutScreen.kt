@@ -281,7 +281,9 @@ fun ActiveWorkoutScreen(vm: WorkoutViewModel, workout: ActiveWorkout, onOpenProg
             ) {
                 val here = exercises.getOrNull(current)
                 val upNext = exercises.getOrNull(current + 1)
-                val noRest = here != null && upNext != null &&
+                // One set each (Heavy Duty): no rest before the linked exercise. With several sets the
+                // timer stays, since you still rest between sets of the same exercise.
+                val noRest = heavy && here != null && upNext != null &&
                     linksToNext(workout.exerciseIds, workout.supersets, here.id)
                 if (noRest) NoRestRow(upNext!!.name) else RestRow(
                     vm,
